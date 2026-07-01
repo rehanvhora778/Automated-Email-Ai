@@ -308,10 +308,13 @@ const checkOnboardingStatus = async (userId) => {
       
       {/* Sidebar (Logo and Heading Fixed in one line) */}
       <aside className="w-80 bg-[#0a0a0a] flex flex-col p-6 border-r border-white/5 hidden lg:flex">
-        <div className="mb-8 flex items-center gap-3 px-2">
+        <div className="mb-6 flex items-center gap-3 px-2 shrink-0">
           <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-black shadow-lg shrink-0"><Zap size={18} fill="black" /></div>
           <h1 className="font-bold text-lg text-white">Email Copilot</h1>
         </div>
+
+        {/* Scrollable region: nav + workspace + conversations (keeps footer pinned) */}
+        <div className="flex-1 min-h-0 overflow-y-auto -mr-3 pr-3">
 
         {/* Primary navigation */}
         <nav className="space-y-1 mb-4">
@@ -370,7 +373,7 @@ const checkOnboardingStatus = async (userId) => {
           </button>
         </div>
 
-        <div className="flex-1 space-y-2 overflow-y-auto">
+        <div className="space-y-2">
             <p className="text-[11px] font-bold text-neutral-600 uppercase tracking-widest px-2 mb-4">Recent Conversations</p>
             {conversations.length > 0 ? conversations.map((conv) => (
               <div key={conv.id} onClick={() => openConversation(conv.id)} className={`flex items-center gap-3 p-3 text-sm rounded-2xl cursor-pointer transition-all ${activeConversationId === conv.id ? 'bg-white/10 text-white' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}>
@@ -380,7 +383,10 @@ const checkOnboardingStatus = async (userId) => {
             )) : <p className="text-xs text-neutral-700 px-3 italic">No conversations yet...</p>}
         </div>
 
-        <div className="mt-auto pt-6 border-t border-white/5 space-y-2">
+        </div>
+        {/* end scrollable region */}
+
+        <div className="shrink-0 pt-6 border-t border-white/5 space-y-2">
            <button onClick={() => setView('settings')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'settings' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><SettingsIcon size={18} /> Settings</button>
            <button onClick={() => setView('profile')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'profile' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><User size={18} /> Profile</button>
            <button onClick={handleGoogleLogin} className="flex items-center gap-3 w-full p-3 hover:bg-white/5 rounded-2xl text-sm transition-all"><Mail size={18} /> Link Gmail Account</button>
