@@ -65,7 +65,16 @@ export type ToolAction =
   | "translate"
   | "improve"
   | "rewrite"
-  | "custom";
+  | "custom"
+  | "grammar_fix"
+  | "summarize"
+  | "tone_detection"
+  | "spam_detection"
+  | "phishing_detection"
+  | "subject_generator"
+  | "follow_up"
+  | "linkedin_outreach"
+  | "interview_email";
 
 export interface ToolPayload {
   user_id?: string | null;

@@ -15,6 +15,15 @@ const meta: Record<ToolAction, { title: string; placeholder: string; contextLabe
   improve: { title: "Improve Writing", placeholder: "Paste the text you want to improve…" },
   rewrite: { title: "Rewrite Email", placeholder: "Paste the text you want to rewrite…", contextLabel: "Desired tone", contextPlaceholder: "e.g. more concise and confident" },
   custom: { title: "AI Assistant", placeholder: "What do you need help writing?" },
+  grammar_fix: { title: "Grammar Fix", placeholder: "Paste the text to correct…" },
+  summarize: { title: "Summarize", placeholder: "Paste the email or text you want summarized…" },
+  tone_detection: { title: "Tone Detection", placeholder: "Paste the email to analyze its tone…" },
+  spam_detection: { title: "Spam Detection", placeholder: "Paste the email to check whether it's spam…" },
+  phishing_detection: { title: "Phishing Detection", placeholder: "Paste the suspicious email to analyze…" },
+  subject_generator: { title: "Subject Line Generator", placeholder: "Describe the email you're sending…", contextLabel: "Goal / audience", contextPlaceholder: "e.g. re-engage a cold lead" },
+  follow_up: { title: "Follow-up Generator", placeholder: "Paste the previous email or describe the context…", contextLabel: "Nudge / next step", contextPlaceholder: "e.g. ask for a decision by Friday" },
+  linkedin_outreach: { title: "LinkedIn Outreach", placeholder: "Who are you reaching out to, and why?", contextLabel: "Format", contextPlaceholder: "e.g. connection note or InMail" },
+  interview_email: { title: "Interview Email", placeholder: "Describe the interview context…", contextLabel: "Type", contextPlaceholder: "e.g. schedule, confirm, or thank-you" },
 };
 
 export function AIToolModal({

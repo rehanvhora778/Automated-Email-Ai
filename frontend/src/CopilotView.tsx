@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { SmartReply } from "./components/reply/SmartReply";
 import { InboxCenter } from "./pages/InboxCenter";
 import { AgentMode } from "./pages/AgentMode";
+import { AITools } from "./pages/AITools";
 import { AIToolModal } from "./components/tools/AIToolModal";
 import { Analytics } from "./pages/Analytics";
 import { CalendarView } from "./pages/CalendarView";
@@ -19,6 +20,7 @@ export type CopilotViewName =
   | "smartReply"
   | "inbox"
   | "agent"
+  | "tools"
   | "analytics"
   | "calendar"
   | "contacts"
@@ -98,6 +100,8 @@ export function CopilotView({
           {view === "agent" && (
             <AgentMode userId={user.id} onSendDraft={onSendDraft} onLinkGmail={onLinkGmail} />
           )}
+
+          {view === "tools" && <AITools onOpenTool={openTool} />}
 
           {view === "analytics" && <Analytics userId={user.id} />}
           {view === "calendar" && <CalendarView />}

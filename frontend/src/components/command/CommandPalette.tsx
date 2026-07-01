@@ -7,6 +7,7 @@ import {
   Search, LayoutDashboard, Bot, Reply, Inbox, BarChart3, Calendar, Users,
   Bell, Settings as SettingsIcon, User, PenLine, Mail, LogOut, FileText,
   Send, Languages, Wand2, RefreshCw, CornerDownLeft, Command as CommandIcon,
+  Sparkles, SpellCheck, AlignLeft, ShieldAlert, Type, Clock,
 } from "lucide-react";
 import type { ToolAction } from "../../lib/types";
 import { cn } from "../../lib/cn";
@@ -83,6 +84,7 @@ export function CommandPalette({
       { id: "nav-notifications", group: "Navigation", label: "Notifications", icon: <Bell size={16} />, keywords: "alerts", run: go("notifications") },
       { id: "nav-settings", group: "Navigation", label: "Settings", icon: <SettingsIcon size={16} />, keywords: "preferences config", run: go("settings") },
       { id: "nav-profile", group: "Navigation", label: "Profile", icon: <User size={16} />, keywords: "account me", run: go("profile") },
+      { id: "nav-tools", group: "Navigation", label: "AI Tools", icon: <Sparkles size={16} />, keywords: "tools suite grammar summarize", run: go("tools") },
 
       { id: "act-compose", group: "Actions", label: "Compose new email", icon: <PenLine size={16} />, keywords: "write send new", run: () => { onCompose(); onOpenChange(false); } },
       { id: "act-summarize", group: "Actions", label: "Summarize my inbox", icon: <Inbox size={16} />, keywords: "briefing ai", run: go("inbox") },
@@ -94,6 +96,11 @@ export function CommandPalette({
       { id: "tool-translate", group: "AI Tools", label: "Translate an email", icon: <Languages size={16} />, keywords: "language", run: tool("translate") },
       { id: "tool-improve", group: "AI Tools", label: "Improve my writing", icon: <Wand2 size={16} />, keywords: "grammar clarity", run: tool("improve") },
       { id: "tool-rewrite", group: "AI Tools", label: "Rewrite an email", icon: <RefreshCw size={16} />, keywords: "rephrase", run: tool("rewrite") },
+      { id: "tool-grammar", group: "AI Tools", label: "Fix grammar", icon: <SpellCheck size={16} />, keywords: "spelling punctuation", run: tool("grammar_fix") },
+      { id: "tool-summarize", group: "AI Tools", label: "Summarize text", icon: <AlignLeft size={16} />, keywords: "tldr key points", run: tool("summarize") },
+      { id: "tool-phishing", group: "AI Tools", label: "Detect phishing", icon: <ShieldAlert size={16} />, keywords: "scam spam security", run: tool("phishing_detection") },
+      { id: "tool-subject", group: "AI Tools", label: "Generate subject lines", icon: <Type size={16} />, keywords: "subject headline", run: tool("subject_generator") },
+      { id: "tool-followup", group: "AI Tools", label: "Write a follow-up", icon: <Clock size={16} />, keywords: "nudge reminder", run: tool("follow_up") },
     ];
   }, [onNavigate, onOpenChange, onCompose, onOpenTool, onLinkGmail, onLogout]);
 

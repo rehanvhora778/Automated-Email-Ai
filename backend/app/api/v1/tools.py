@@ -14,7 +14,11 @@ from app.db.supabase import get_user_profile, get_user_resume
 router = APIRouter()
 ai = SecretaryAI()
 
-ALLOWED_ACTIONS = {"cover_letter", "cold_email", "translate", "improve", "rewrite", "custom"}
+ALLOWED_ACTIONS = {
+    "cover_letter", "cold_email", "translate", "improve", "rewrite", "custom",
+    "grammar_fix", "summarize", "tone_detection", "spam_detection", "phishing_detection",
+    "subject_generator", "follow_up", "linkedin_outreach", "interview_email",
+}
 
 
 class ToolRequest(BaseModel):

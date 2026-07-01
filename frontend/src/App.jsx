@@ -340,6 +340,7 @@ const checkOnboardingStatus = async (userId) => {
         <p className="text-[11px] font-bold text-neutral-600 uppercase tracking-widest px-2 mb-2">Workspace</p>
         <nav className="space-y-1 mb-6">
           {[
+            { key: 'tools', label: 'AI Tools', icon: Sparkles },
             { key: 'analytics', label: 'Analytics', icon: BarChart3 },
             { key: 'calendar', label: 'Calendar', icon: CalendarIcon },
             { key: 'contacts', label: 'Contacts', icon: Users },
