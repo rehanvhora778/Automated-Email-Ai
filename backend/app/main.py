@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, profile, actions, auth
+from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -29,6 +29,15 @@ app.include_router(actions.router, prefix="/api/v1/actions", tags=["Actions"])
 
 # 4. Auth (Signup that auto-confirms email so login works immediately)
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+
+# 5. Smart Reply Generator (six reply styles from a pasted email)
+app.include_router(reply.router, prefix="/api/v1/reply", tags=["Reply"])
+
+# 6. AI Inbox Summary (reads recent Gmail -> structured briefing)
+app.include_router(inbox.router, prefix="/api/v1/inbox", tags=["Inbox"])
+
+# 7. AI Writing Tools (cover letter, cold email, translate, improve, rewrite)
+app.include_router(tools.router, prefix="/api/v1/ai", tags=["AI Tools"])
 
 @app.get("/")
 def home():

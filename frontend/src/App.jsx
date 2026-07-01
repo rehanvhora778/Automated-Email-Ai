@@ -3,10 +3,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { supabase } from './supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Send, Bot, User, LogOut, Plus, Mail, 
-  FileUp, Sparkles, MessageSquare, Moon, Zap
+import {
+  Send, Bot, User, LogOut, Plus, Mail,
+  FileUp, Sparkles, MessageSquare, Moon, Zap,
+  LayoutDashboard, Reply, Inbox,
+  BarChart3, Calendar as CalendarIcon, Users, Bell, Settings as SettingsIcon, Search
 } from 'lucide-react';
+import { CopilotView } from './CopilotView';
+import { CommandPalette } from './components/command/CommandPalette';
+import { QuickActionFab } from './components/layout/QuickActionFab';
 const API_URL = "http://localhost:8000";
 function App() {
   const [user, setUser] = useState(null);
@@ -16,6 +21,9 @@ function App() {
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
+  const [view, setView] = useState('dashboard'); // dashboard | chat | smartReply | inbox | analytics | calendar | contacts | notifications | settings | profile
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pendingTool, setPendingTool] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const chatEndRef = useRef(null);
@@ -48,6 +56,7 @@ function App() {
 
   // --- OPEN A SPECIFIC CONVERSATION (load its messages into the chat window) ---
   const openConversation = async (conversationId) => {
+    setView('chat');
     setActiveConversationId(conversationId);
     try {
       const { data } = await supabase
@@ -114,6 +123,7 @@ const checkOnboardingStatus = async (userId) => {
   };
 
   const handleNewSession = () => {
+    setView('chat');
     setChat([]);
     setActiveConversationId(null);
     setMessage('');
@@ -142,6 +152,13 @@ const checkOnboardingStatus = async (userId) => {
   };
 
   const handleLogout = () => supabase.auth.signOut();
+
+  // Open an AI writing tool from the command palette / FAB.
+  // CopilotView hosts the tool modal, so ensure a non-chat view is active first.
+  const handleOpenTool = (action) => {
+    setView((v) => (v === 'chat' ? 'dashboard' : v));
+    setPendingTool(action);
+  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -291,14 +308,65 @@ const checkOnboardingStatus = async (userId) => {
       
       {/* Sidebar (Logo and Heading Fixed in one line) */}
       <aside className="w-80 bg-[#0a0a0a] flex flex-col p-6 border-r border-white/5 hidden lg:flex">
-        <div className="mb-10 flex items-center gap-3 px-2">
+        <div className="mb-8 flex items-center gap-3 px-2">
           <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-black shadow-lg shrink-0"><Zap size={18} fill="black" /></div>
-          <h1 className="font-bold text-lg text-white">Smart Email Agent</h1>
+          <h1 className="font-bold text-lg text-white">Email Copilot</h1>
         </div>
-        
-        <button onClick={handleNewSession} className="flex items-center gap-3 p-4 bg-white/5 border border-white/10 text-white rounded-2xl hover:bg-white/10 mb-8 font-semibold text-sm">
-          <Plus size={18} /> New Session
-        </button>
+
+        {/* Primary navigation */}
+        <nav className="space-y-1 mb-4">
+          {[
+            { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { key: 'chat', label: 'AI Workspace', icon: Bot },
+            { key: 'smartReply', label: 'Smart Reply', icon: Reply },
+            { key: 'inbox', label: 'Inbox Summary', icon: Inbox },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = view === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setView(item.key)}
+                className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm font-semibold transition-all ${active ? 'bg-white/10 text-white shadow-inner' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}
+              >
+                <Icon size={18} /> {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Workspace navigation (new pages) */}
+        <p className="text-[11px] font-bold text-neutral-600 uppercase tracking-widest px-2 mb-2">Workspace</p>
+        <nav className="space-y-1 mb-6">
+          {[
+            { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+            { key: 'calendar', label: 'Calendar', icon: CalendarIcon },
+            { key: 'contacts', label: 'Contacts', icon: Users },
+            { key: 'notifications', label: 'Notifications', icon: Bell },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = view === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setView(item.key)}
+                className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm font-semibold transition-all ${active ? 'bg-white/10 text-white shadow-inner' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}
+              >
+                <Icon size={18} /> {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="space-y-2 mb-8">
+          <button onClick={handleNewSession} className="flex items-center gap-3 p-4 w-full bg-white/5 border border-white/10 text-white rounded-2xl hover:bg-white/10 font-semibold text-sm">
+            <Plus size={18} /> New Session
+          </button>
+          <button onClick={() => setPaletteOpen(true)} className="flex items-center gap-3 p-3 w-full text-neutral-400 hover:bg-white/5 hover:text-white rounded-2xl text-sm font-semibold transition-all">
+            <Search size={18} /> Search
+            <kbd className="ml-auto text-[10px] font-medium text-neutral-500 border border-white/10 rounded-md px-1.5 py-0.5">⌘K</kbd>
+          </button>
+        </div>
 
         <div className="flex-1 space-y-2 overflow-y-auto">
             <p className="text-[11px] font-bold text-neutral-600 uppercase tracking-widest px-2 mb-4">Recent Conversations</p>
@@ -311,6 +379,8 @@ const checkOnboardingStatus = async (userId) => {
         </div>
 
         <div className="mt-auto pt-6 border-t border-white/5 space-y-2">
+           <button onClick={() => setView('settings')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'settings' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><SettingsIcon size={18} /> Settings</button>
+           <button onClick={() => setView('profile')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'profile' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><User size={18} /> Profile</button>
            <button onClick={handleGoogleLogin} className="flex items-center gap-3 w-full p-3 hover:bg-white/5 rounded-2xl text-sm transition-all"><Mail size={18} /> Link Gmail Account</button>
            <label className="flex items-center gap-3 w-full p-3 hover:bg-white/5 rounded-2xl text-sm cursor-pointer">
               <FileUp size={18} /> {uploading ? "Parsing..." : "Upload Resume"}
@@ -320,8 +390,10 @@ const checkOnboardingStatus = async (userId) => {
         </div>
       </aside>
 
-      {/* Main Chat Interface */}
-      <main className="flex-1 flex flex-col relative bg-[#050505]">
+      {/* Main Interface (Dashboard / Smart Reply / Inbox / Chat) */}
+      <main className="flex-1 flex flex-col relative bg-[#050505] overflow-hidden min-h-0 min-w-0">
+        {view === 'chat' ? (
+        <>
         <header className="p-5 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md flex justify-between items-center px-10">
             <div className="flex items-center gap-2 text-sm font-semibold text-white"><Bot size={16} className="text-blue-500" />AI Workspace</div>
             <div className="text-[11px] font-medium text-neutral-500 bg-white/5 px-4 py-2 rounded-full">Active: {user.email}</div>
@@ -376,6 +448,20 @@ const checkOnboardingStatus = async (userId) => {
             <p className="text-[10px] text-center text-neutral-700 mt-4 font-medium uppercase tracking-widest">Powered by Mistral AI v1.5</p>
           </div>
         </div>
+        </>
+        ) : (
+          <CopilotView
+            view={view}
+            user={{ id: user.id, email: user.email }}
+            onNavigate={setView}
+            onCompose={() => handleSendEmail('', '')}
+            onSendDraft={handleSendEmail}
+            onLinkGmail={handleGoogleLogin}
+            onLogout={handleLogout}
+            openToolAction={pendingTool}
+            onToolHandled={() => setPendingTool(null)}
+          />
+        )}
         {/* Onboarding Popup Modal */}
 <AnimatePresence>
   {showOnboarding && (
@@ -479,6 +565,25 @@ const checkOnboardingStatus = async (userId) => {
         </div>
       )}
       </main>
+
+      {/* Global command palette (⌘K) + floating quick actions */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onNavigate={setView}
+        onCompose={() => handleSendEmail('', '')}
+        onOpenTool={handleOpenTool}
+        onLinkGmail={handleGoogleLogin}
+        onLogout={handleLogout}
+      />
+      {view !== 'chat' && (
+        <QuickActionFab
+          onCompose={() => handleSendEmail('', '')}
+          onNavigate={setView}
+          onOpenTool={handleOpenTool}
+          onOpenPalette={() => setPaletteOpen(true)}
+        />
+      )}
     </div>
   );
 }

@@ -19,7 +19,10 @@ router = APIRouter()
 # Local testing bypass
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.readonly',  # needed for AI Inbox Summary
+]
 # Purani 2-3 lines hata kar ye naya block paste karo
 REDIRECT_URI = "http://localhost:8000/api/v1/actions/callback"
 
