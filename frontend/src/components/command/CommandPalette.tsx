@@ -74,6 +74,7 @@ export function CommandPalette({
     return [
       { id: "nav-dashboard", group: "Navigation", label: "Dashboard", icon: <LayoutDashboard size={16} />, keywords: "home overview", run: go("dashboard") },
       { id: "nav-chat", group: "Navigation", label: "AI Workspace", icon: <Bot size={16} />, keywords: "chat assistant", run: go("chat") },
+      { id: "nav-agent", group: "Navigation", label: "AI Agent", icon: <Wand2 size={16} />, keywords: "agent automate command run", run: go("agent") },
       { id: "nav-reply", group: "Navigation", label: "Smart Reply", icon: <Reply size={16} />, keywords: "respond reply", run: go("smartReply") },
       { id: "nav-inbox", group: "Navigation", label: "Inbox Summary", icon: <Inbox size={16} />, keywords: "briefing mail", run: go("inbox") },
       { id: "nav-analytics", group: "Navigation", label: "Analytics", icon: <BarChart3 size={16} />, keywords: "stats charts metrics", run: go("analytics") },

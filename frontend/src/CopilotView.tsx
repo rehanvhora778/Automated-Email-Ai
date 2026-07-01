@@ -4,6 +4,7 @@ import type { ToolAction } from "./lib/types";
 import { Dashboard } from "./pages/Dashboard";
 import { SmartReply } from "./components/reply/SmartReply";
 import { InboxCenter } from "./pages/InboxCenter";
+import { AgentMode } from "./pages/AgentMode";
 import { AIToolModal } from "./components/tools/AIToolModal";
 import { Analytics } from "./pages/Analytics";
 import { CalendarView } from "./pages/CalendarView";
@@ -17,6 +18,7 @@ export type CopilotViewName =
   | "dashboard"
   | "smartReply"
   | "inbox"
+  | "agent"
   | "analytics"
   | "calendar"
   | "contacts"
@@ -92,6 +94,10 @@ export function CopilotView({
           {view === "smartReply" && <SmartReply userId={user.id} onSendDraft={onSendDraft} />}
 
           {view === "inbox" && <InboxCenter userId={user.id} onLinkGmail={onLinkGmail} />}
+
+          {view === "agent" && (
+            <AgentMode userId={user.id} onSendDraft={onSendDraft} onLinkGmail={onLinkGmail} />
+          )}
 
           {view === "analytics" && <Analytics userId={user.id} />}
           {view === "calendar" && <CalendarView />}

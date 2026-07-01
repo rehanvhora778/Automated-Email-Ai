@@ -5,6 +5,7 @@ import type {
   InboxSummaryResponse,
   InboxMessagesResponse,
   InboxActionType,
+  AgentEvent,
   ToolPayload,
   ToolResponse,
 } from "./types";
@@ -54,6 +55,62 @@ export async function runInboxAction(
     message_id: messageId,
     action,
   });
+}
+
+/**
+ * AI Agent Mode — POSTs a command and streams newline-delimited JSON events,
+ * invoking `onEvent` for each. Pass an AbortSignal to cancel mid-run.
+ */
+export async function streamAgent(
+  payload: { user_id?: string | null; command: string },
+  onEvent: (event: AgentEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/agent/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `Request failed (${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const flush = () => {
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) {
+        try {
+          onEvent(JSON.parse(line) as AgentEvent);
+        } catch {
+          /* ignore malformed partials */
+        }
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    flush();
+  }
+  buffer += decoder.decode();
+  const tail = buffer.trim();
+  if (tail) {
+    try {
+      onEvent(JSON.parse(tail) as AgentEvent);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Generic AI writing tool (cover letter, cold email, translate, improve, rewrite). */

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools
+from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools, agent
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -38,6 +38,9 @@ app.include_router(inbox.router, prefix="/api/v1/inbox", tags=["Inbox"])
 
 # 7. AI Writing Tools (cover letter, cold email, translate, improve, rewrite)
 app.include_router(tools.router, prefix="/api/v1/ai", tags=["AI Tools"])
+
+# 8. AI Agent Mode (streamed multi-step command execution)
+app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 
 @app.get("/")
 def home():

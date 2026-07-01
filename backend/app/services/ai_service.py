@@ -241,3 +241,36 @@ suggestion "type" must be one of: reply, follow_up, respond, thank_you. Keep eve
             delta = event.data.choices[0].delta.content
             if delta:
                 yield delta
+
+    def agent_plan(self, command, user_name="User", resume=""):
+        """Classify an agent command and prepare any content it needs.
+
+        Returns {intent, message, to, subject, body}. For drafting intents the
+        `body` holds a complete, ready-to-send draft; for read/action intents
+        (summarize/archive) body stays empty and the backend does the work.
+        """
+        system_prompt = f"""You are an autonomous email assistant acting for {user_name}.
+Classify the user's COMMAND and prepare what is needed. Return STRICT JSON:
+{{
+  "intent": one of ["summarize_inbox","compose_email","draft_reply","archive_promotions","schedule_meeting","find_contact","general"],
+  "message": "one short sentence describing what you will do",
+  "to": "recipient email or name if one is mentioned, else empty",
+  "subject": "a fitting subject line if drafting an email, else empty",
+  "body": "the full text if drafting/answering, else empty"
+}}
+Rules:
+- compose_email / draft_reply / schedule_meeting: write a complete, polished, ready-to-send draft in "body" (natural sign-off with {user_name}), plus a "subject". For schedule_meeting, draft a message proposing specific times.
+- summarize_inbox / archive_promotions / find_contact: leave "subject" and "body" empty; the app performs these.
+- general: put a helpful answer in "body".
+- Never use bracket placeholders like [Name]. Personalise with the resume when drafting.
+RESUME (for personalisation): {resume[:800]}"""
+        try:
+            data = self._chat_json(system_prompt, f"COMMAND: {command}")
+        except Exception as e:
+            print(f"agent_plan error: {e}")
+            return {"intent": "general", "message": "Helping with your request.",
+                    "to": "", "subject": "", "body": "Sorry, I couldn't process that. Please try again."}
+        data.setdefault("intent", "general")
+        for k in ("message", "to", "subject", "body"):
+            data.setdefault(k, "")
+        return data

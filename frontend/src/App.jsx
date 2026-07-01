@@ -7,7 +7,7 @@ import {
   Send, Bot, User, LogOut, Plus, Mail,
   FileUp, Sparkles, MessageSquare, Moon, Zap,
   LayoutDashboard, Reply, Inbox,
-  BarChart3, Calendar as CalendarIcon, Users, Bell, Settings as SettingsIcon, Search
+  BarChart3, Calendar as CalendarIcon, Users, Bell, Settings as SettingsIcon, Search, Wand2
 } from 'lucide-react';
 import { CopilotView } from './CopilotView';
 import { CommandPalette } from './components/command/CommandPalette';
@@ -318,6 +318,7 @@ const checkOnboardingStatus = async (userId) => {
           {[
             { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { key: 'chat', label: 'AI Workspace', icon: Bot },
+            { key: 'agent', label: 'AI Agent', icon: Wand2 },
             { key: 'smartReply', label: 'Smart Reply', icon: Reply },
             { key: 'inbox', label: 'Inbox Summary', icon: Inbox },
           ].map((item) => {
