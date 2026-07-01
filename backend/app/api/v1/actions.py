@@ -21,7 +21,8 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.readonly',  # needed for AI Inbox Summary
+    'https://www.googleapis.com/auth/gmail.readonly',  # AI Inbox Summary (read)
+    'https://www.googleapis.com/auth/gmail.modify',    # Inbox actions: archive/trash/label/star/read
 ]
 # Purani 2-3 lines hata kar ye naya block paste karo
 REDIRECT_URI = "http://localhost:8000/api/v1/actions/callback"

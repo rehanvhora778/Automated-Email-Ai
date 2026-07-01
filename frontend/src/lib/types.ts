@@ -78,3 +78,45 @@ export interface ToolResponse {
   content: string;
   error?: string;
 }
+
+// ---- Inbox tabs + Gmail actions ----
+
+export type InboxTab =
+  | "overview"
+  | "important"
+  | "promotions"
+  | "newsletters"
+  | "finance"
+  | "travel"
+  | "social"
+  | "updates";
+
+export interface InboxMessage {
+  id: string;
+  thread_id: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  snippet: string;
+  date: string;
+  unread: boolean;
+  starred: boolean;
+  important: boolean;
+}
+
+export interface InboxMessagesResponse {
+  gmail_linked: boolean;
+  needs_reauth?: boolean;
+  error?: string;
+  messages: InboxMessage[];
+}
+
+export type InboxActionType =
+  | "archive"
+  | "trash"
+  | "mark_important"
+  | "mark_unimportant"
+  | "mark_read"
+  | "mark_unread"
+  | "star"
+  | "unstar";

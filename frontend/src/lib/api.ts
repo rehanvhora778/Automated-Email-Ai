@@ -3,6 +3,8 @@ import type {
   GenerateReplyPayload,
   ReplyStyles,
   InboxSummaryResponse,
+  InboxMessagesResponse,
+  InboxActionType,
   ToolPayload,
   ToolResponse,
 } from "./types";
@@ -28,6 +30,30 @@ export async function getInboxSummary(
     params: { user_id: userId },
   });
   return data as InboxSummaryResponse;
+}
+
+/** List inbox messages for a tab (important/promotions/finance/…) with flags. */
+export async function getInboxMessages(
+  userId: string,
+  tab: string
+): Promise<InboxMessagesResponse> {
+  const { data } = await apiClient.get("/api/v1/inbox/messages", {
+    params: { user_id: userId, tab },
+  });
+  return data as InboxMessagesResponse;
+}
+
+/** Perform a single Gmail action (archive/trash/label/star/read) on a message. */
+export async function runInboxAction(
+  userId: string,
+  messageId: string,
+  action: InboxActionType
+): Promise<void> {
+  await apiClient.post("/api/v1/inbox/action", {
+    user_id: userId,
+    message_id: messageId,
+    action,
+  });
 }
 
 /** Generic AI writing tool (cover letter, cold email, translate, improve, rewrite). */

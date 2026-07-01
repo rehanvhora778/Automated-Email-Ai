@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Inbox as InboxIcon } from "lucide-react";
 import type { ToolAction } from "./lib/types";
 import { Dashboard } from "./pages/Dashboard";
 import { SmartReply } from "./components/reply/SmartReply";
-import { InboxSummary } from "./components/dashboard/InboxSummary";
+import { InboxCenter } from "./pages/InboxCenter";
 import { AIToolModal } from "./components/tools/AIToolModal";
 import { Analytics } from "./pages/Analytics";
 import { CalendarView } from "./pages/CalendarView";
@@ -92,17 +91,7 @@ export function CopilotView({
 
           {view === "smartReply" && <SmartReply userId={user.id} onSendDraft={onSendDraft} />}
 
-          {view === "inbox" && (
-            <div className="mx-auto max-w-3xl space-y-6">
-              <div>
-                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
-                  <InboxIcon size={22} className="text-brand-400" /> Inbox Summary
-                </h1>
-                <p className="mt-1 text-sm text-neutral-500">An AI briefing of your most recent emails.</p>
-              </div>
-              <InboxSummary userId={user.id} onLinkGmail={onLinkGmail} />
-            </div>
-          )}
+          {view === "inbox" && <InboxCenter userId={user.id} onLinkGmail={onLinkGmail} />}
 
           {view === "analytics" && <Analytics userId={user.id} />}
           {view === "calendar" && <CalendarView />}
