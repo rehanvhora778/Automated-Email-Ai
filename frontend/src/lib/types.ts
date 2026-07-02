@@ -92,13 +92,15 @@ export interface ToolResponse {
 
 export type InboxTab =
   | "overview"
+  | "primary"
   | "important"
-  | "promotions"
-  | "newsletters"
-  | "finance"
-  | "travel"
+  | "starred"
+  | "unread"
   | "social"
-  | "updates";
+  | "promotions"
+  | "updates"
+  | "forums"
+  | "newsletters";
 
 export interface InboxMessage {
   id: string;
@@ -129,6 +131,81 @@ export type InboxActionType =
   | "mark_unread"
   | "star"
   | "unstar";
+
+// ---- Email Analytics (real Gmail data) ----
+
+export interface AnalyticsDay {
+  label: string;
+  sent: number;
+  received: number;
+}
+
+export interface AnalyticsCategory {
+  name: string;
+  count: number;
+  color: string;
+}
+
+export interface AnalyticsSender {
+  name: string;
+  email: string;
+  count: number;
+}
+
+export interface AnalyticsResponse {
+  gmail_linked: boolean;
+  needs_reauth?: boolean;
+  error?: string;
+  email_address?: string;
+  totals?: { messages: number; threads: number; inbox: number; unread: number };
+  sent_30d?: number;
+  sent_30d_capped?: boolean;
+  received_30d?: number;
+  received_30d_capped?: boolean;
+  daily?: AnalyticsDay[];
+  categories?: AnalyticsCategory[];
+  top_senders?: AnalyticsSender[];
+}
+
+// ---- Contacts (derived from Gmail senders/recipients) ----
+
+export interface GmailContact {
+  name: string;
+  email: string;
+  domain: string;
+  received: number;
+  sent: number;
+  count: number;
+  last_ms: number;
+}
+
+export interface ContactsResponse {
+  gmail_linked: boolean;
+  needs_reauth?: boolean;
+  error?: string;
+  contacts: GmailContact[];
+}
+
+// ---- Notifications (unread Gmail messages) ----
+
+export interface GmailNotification {
+  id: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  snippet: string;
+  time_ms: number;
+  category: "primary" | "social" | "promotions" | "updates" | "forums" | string;
+  important: boolean;
+  starred: boolean;
+}
+
+export interface NotificationsResponse {
+  gmail_linked: boolean;
+  needs_reauth?: boolean;
+  error?: string;
+  notifications: GmailNotification[];
+}
 
 // ---- AI Agent Mode ----
 

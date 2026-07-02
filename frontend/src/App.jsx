@@ -7,7 +7,7 @@ import {
   Send, Bot, User, LogOut, Plus, Mail,
   FileUp, Sparkles, MessageSquare, Moon, Zap,
   LayoutDashboard, Reply, Inbox,
-  BarChart3, Calendar as CalendarIcon, Users, Bell, Settings as SettingsIcon, Search, Wand2
+  BarChart3, Users, Bell, Settings as SettingsIcon, Search, Wand2
 } from 'lucide-react';
 import { CopilotView } from './CopilotView';
 import { CommandPalette } from './components/command/CommandPalette';
@@ -21,7 +21,7 @@ function App() {
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
-  const [view, setView] = useState('dashboard'); // dashboard | chat | smartReply | inbox | analytics | calendar | contacts | notifications | settings | profile
+  const [view, setView] = useState('dashboard'); // dashboard | chat | smartReply | inbox | analytics | contacts | notifications | settings | profile
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pendingTool, setPendingTool] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -345,7 +345,6 @@ const checkOnboardingStatus = async (userId) => {
           {[
             { key: 'tools', label: 'AI Tools', icon: Sparkles },
             { key: 'analytics', label: 'Analytics', icon: BarChart3 },
-            { key: 'calendar', label: 'Calendar', icon: CalendarIcon },
             { key: 'contacts', label: 'Contacts', icon: Users },
             { key: 'notifications', label: 'Notifications', icon: Bell },
           ].map((item) => {

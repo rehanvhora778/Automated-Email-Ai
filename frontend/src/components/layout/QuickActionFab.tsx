@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, PenLine, Reply, Inbox, Languages, RefreshCw, CalendarClock, Search,
+  Plus, PenLine, Reply, Inbox, Languages, RefreshCw, Search,
 } from "lucide-react";
 import type { ToolAction } from "../../lib/types";
 import { cn } from "../../lib/cn";
@@ -34,7 +34,6 @@ export function QuickActionFab({
 
   const actions: FabAction[] = [
     { label: "Search (⌘K)", icon: <Search size={18} />, accent: "from-slate-400 to-slate-500", run: act(onOpenPalette) },
-    { label: "Schedule", icon: <CalendarClock size={18} />, accent: "from-rose-500 to-pink-500", run: act(() => onNavigate("calendar")) },
     { label: "Rewrite", icon: <RefreshCw size={18} />, accent: "from-teal-500 to-green-500", run: act(() => onOpenTool("rewrite")) },
     { label: "Translate", icon: <Languages size={18} />, accent: "from-amber-500 to-orange-500", run: act(() => onOpenTool("translate")) },
     { label: "Summarize", icon: <Inbox size={18} />, accent: "from-sky-500 to-cyan-500", run: act(() => onNavigate("inbox")) },

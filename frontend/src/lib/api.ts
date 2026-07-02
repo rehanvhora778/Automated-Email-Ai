@@ -5,6 +5,9 @@ import type {
   InboxSummaryResponse,
   InboxMessagesResponse,
   InboxActionType,
+  AnalyticsResponse,
+  ContactsResponse,
+  NotificationsResponse,
   AgentEvent,
   ToolPayload,
   ToolResponse,
@@ -33,7 +36,7 @@ export async function getInboxSummary(
   return data as InboxSummaryResponse;
 }
 
-/** List inbox messages for a tab (important/promotions/finance/…) with flags. */
+/** List inbox messages for a tab (primary/important/promotions/…) with flags. */
 export async function getInboxMessages(
   userId: string,
   tab: string
@@ -42,6 +45,47 @@ export async function getInboxMessages(
     params: { user_id: userId, tab },
   });
   return data as InboxMessagesResponse;
+}
+
+/** Real Gmail analytics — volume, daily trend, category mix, top senders. */
+export async function getEmailAnalytics(
+  userId: string
+): Promise<AnalyticsResponse> {
+  const { data } = await apiClient.get("/api/v1/analytics/overview", {
+    params: { user_id: userId },
+  });
+  return data as AnalyticsResponse;
+}
+
+/** Real contacts derived from Gmail senders/recipients. */
+export async function getGmailContacts(
+  userId: string
+): Promise<ContactsResponse> {
+  const { data } = await apiClient.get("/api/v1/contacts/list", {
+    params: { user_id: userId },
+  });
+  return data as ContactsResponse;
+}
+
+/** Real notifications — your latest unread Gmail messages. */
+export async function getGmailNotifications(
+  userId: string
+): Promise<NotificationsResponse> {
+  const { data } = await apiClient.get("/api/v1/notifications/list", {
+    params: { user_id: userId },
+  });
+  return data as NotificationsResponse;
+}
+
+/** Mark the given messages read (really removes Gmail's UNREAD label). */
+export async function markNotificationsRead(
+  userId: string,
+  messageIds: string[]
+): Promise<void> {
+  await apiClient.post("/api/v1/notifications/read_all", {
+    user_id: userId,
+    message_ids: messageIds,
+  });
 }
 
 /** Perform a single Gmail action (archive/trash/label/star/read) on a message. */

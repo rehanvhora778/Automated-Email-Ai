@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import {
   Settings as SettingsIcon, Palette, Cpu, Plug, BellRing, ShieldCheck,
-  Mail, Calendar, HardDrive, KeyRound, Check, Monitor, Globe, LogOut, Smartphone,
+  Mail, HardDrive, KeyRound, Check, Monitor, Globe, LogOut, Smartphone,
 } from "lucide-react";
 import { GlassCard } from "../components/ui/GlassCard";
 import { Toggle } from "../components/ui/Toggle";
@@ -42,7 +42,7 @@ export function Settings({ userEmail, onLinkGmail }: { userEmail?: string; onLin
   const [accent, setAccent] = useState("Indigo");
   const [language, setLanguage] = useState("English");
   const [model, setModel] = useState("Mistral Medium");
-  const [notif, setNotif] = useState({ aiFinished: true, emailSent: true, meetings: true, mentions: false, weekly: true });
+  const [notif, setNotif] = useState({ aiFinished: true, emailSent: true, mentions: false, weekly: true });
 
   const accents = [
     { name: "Indigo", class: "from-indigo-500 to-blue-500" },
@@ -121,7 +121,6 @@ export function Settings({ userEmail, onLinkGmail }: { userEmail?: string; onLin
             desc={userEmail ? `Signed in as ${userEmail}` : "Send and read email"}
             action={<Button variant="glass" onClick={onLinkGmail}><Mail size={15} /> Link / Re-link</Button>}
           />
-          <Row icon={<Calendar size={18} className="text-sky-400" />} title="Google Calendar" desc="Sync meetings and reminders." action={<Button variant="glass"><Calendar size={15} /> Connect</Button>} />
           <Row icon={<HardDrive size={18} className="text-emerald-400" />} title="Google Drive" desc="Attach files from Drive." action={<Button variant="glass"><HardDrive size={15} /> Connect</Button>} />
         </GlassCard>
       )}
@@ -130,7 +129,6 @@ export function Settings({ userEmail, onLinkGmail }: { userEmail?: string; onLin
         <GlassCard className="space-y-4 p-6">
           <Row icon={<BellRing size={18} />} title="AI finished tasks" desc="When a draft or summary is ready." action={<Toggle checked={notif.aiFinished} onChange={(v) => setNotif((n) => ({ ...n, aiFinished: v }))} />} />
           <Row icon={<Mail size={18} />} title="Email sent" desc="Confirmation when mail is delivered." action={<Toggle checked={notif.emailSent} onChange={(v) => setNotif((n) => ({ ...n, emailSent: v }))} />} />
-          <Row icon={<Calendar size={18} />} title="Meeting reminders" action={<Toggle checked={notif.meetings} onChange={(v) => setNotif((n) => ({ ...n, meetings: v }))} />} />
           <Row icon={<Globe size={18} />} title="Mentions" action={<Toggle checked={notif.mentions} onChange={(v) => setNotif((n) => ({ ...n, mentions: v }))} />} />
           <Row icon={<BellRing size={18} />} title="Weekly digest" desc="A Monday summary of last week." action={<Toggle checked={notif.weekly} onChange={(v) => setNotif((n) => ({ ...n, weekly: v }))} />} />
         </GlassCard>

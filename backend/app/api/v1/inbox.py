@@ -47,16 +47,19 @@ def _load_gmail(user_id):
     return build_user_gmail_service(token), profile.get("full_name") or "there", True
 
 
-# Tab -> Gmail search query. Overview/important use labels/queries; the rest
-# lean on Gmail's smart categories and keyword search.
+# Tab -> Gmail search query. These mirror Gmail's own categories (Primary,
+# Social, Promotions, Updates, Forums) and views (Important, Starred, Unread);
+# newsletters is the one keyword-based convenience filter.
 TAB_QUERIES = {
+    "primary": "in:inbox category:primary",
     "important": "is:important",
-    "promotions": "category:promotions",
+    "starred": "is:starred",
+    "unread": "in:inbox is:unread",
     "social": "category:social",
+    "promotions": "category:promotions",
     "updates": "category:updates",
+    "forums": "category:forums",
     "newsletters": "unsubscribe OR newsletter OR digest",
-    "finance": "invoice OR receipt OR payment OR statement OR bank OR transaction OR refund OR order",
-    "travel": "flight OR hotel OR booking OR itinerary OR reservation OR boarding OR trip",
 }
 
 # Action -> Gmail label modifications. "trash" is handled separately.

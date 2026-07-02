@@ -8,7 +8,6 @@ import { AgentMode } from "./pages/AgentMode";
 import { AITools } from "./pages/AITools";
 import { AIToolModal } from "./components/tools/AIToolModal";
 import { Analytics } from "./pages/Analytics";
-import { CalendarView } from "./pages/CalendarView";
 import { Contacts } from "./pages/Contacts";
 import { Notifications } from "./pages/Notifications";
 import { Settings } from "./pages/Settings";
@@ -22,7 +21,6 @@ export type CopilotViewName =
   | "agent"
   | "tools"
   | "analytics"
-  | "calendar"
   | "contacts"
   | "notifications"
   | "settings"
@@ -35,7 +33,7 @@ export interface CopilotUser {
 
 /**
  * Renders the new Copilot experiences (Dashboard, Smart Reply, Inbox Summary,
- * plus the Analytics/Calendar/Contacts/Notifications/Settings/Profile pages)
+ * plus the Analytics/Contacts/Notifications/Settings/Profile pages)
  * and hosts the shared AI-tool modal. The existing chat workspace stays in App.jsx.
  */
 export function CopilotView({
@@ -103,10 +101,13 @@ export function CopilotView({
 
           {view === "tools" && <AITools onOpenTool={openTool} />}
 
-          {view === "analytics" && <Analytics userId={user.id} />}
-          {view === "calendar" && <CalendarView />}
-          {view === "contacts" && <Contacts onCompose={onCompose} />}
-          {view === "notifications" && <Notifications />}
+          {view === "analytics" && <Analytics userId={user.id} onLinkGmail={onLinkGmail} />}
+          {view === "contacts" && (
+            <Contacts userId={user.id} onCompose={onCompose} onLinkGmail={onLinkGmail} />
+          )}
+          {view === "notifications" && (
+            <Notifications userId={user.id} onLinkGmail={onLinkGmail} />
+          )}
           {view === "settings" && <Settings userEmail={user.email} onLinkGmail={onLinkGmail} />}
           {view === "profile" && (
             <Profile userEmail={user.email} userId={user.id} onLinkGmail={onLinkGmail} />

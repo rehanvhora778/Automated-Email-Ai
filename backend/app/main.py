@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools, agent
+from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -41,6 +41,15 @@ app.include_router(tools.router, prefix="/api/v1/ai", tags=["AI Tools"])
 
 # 8. AI Agent Mode (streamed multi-step command execution)
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
+
+# 9. Email Analytics (real Gmail volume/trend/category/sender stats)
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
+
+# 10. Contacts (real people derived from Gmail senders/recipients)
+app.include_router(contacts.router, prefix="/api/v1/contacts", tags=["Contacts"])
+
+# 11. Notifications (real unread Gmail messages + mark-all-read)
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 
 @app.get("/")
 def home():

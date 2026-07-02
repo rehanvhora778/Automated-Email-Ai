@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import {
-  Mail, Star, Send, Inbox, Sparkles, HardDrive, Zap, Calendar, Check, BadgeCheck,
+  Mail, Star, Send, Inbox, Sparkles, HardDrive, Zap, Check, BadgeCheck,
 } from "lucide-react";
 import { useInboxSummary } from "../lib/hooks";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -95,14 +95,6 @@ export function Profile({
             {gmailLinked ? <Badge tone="success"><Check size={11} /> Live</Badge> : (
               <Button variant="glass" onClick={onLinkGmail} className="px-3 py-1.5 text-xs">Link</Button>
             )}
-          </div>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5"><Calendar size={16} className="text-sky-400" /></div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">Calendar</p>
-              <p className="text-xs text-neutral-500">Preview</p>
-            </div>
-            <Button variant="glass" className="px-3 py-1.5 text-xs">Connect</Button>
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] p-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5"><HardDrive size={16} className="text-emerald-400" /></div>

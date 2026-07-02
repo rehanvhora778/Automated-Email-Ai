@@ -1,181 +1,244 @@
-import { type ReactNode } from "react";
 import { motion } from "framer-motion";
 import {
-  BarChart3, TrendingUp, TrendingDown, Send, Inbox, MailOpen, Timer,
-  Zap, Gauge, Flame, User, Building2, PieChart as PieIcon, CalendarRange,
+  BarChart3, Send, Inbox as InboxIcon, MailOpen, Layers, TrendingUp,
+  PieChart as PieIcon, Users, Mail, MailWarning, RefreshCw, MessagesSquare,
 } from "lucide-react";
-import { useInboxSummary } from "../lib/hooks";
-import {
-  weeklyTrend, monthlyTrend, categorySegments, activityWeeks, replySpeed, contacts,
-} from "../lib/demo";
+import { useEmailAnalytics } from "../lib/hooks";
 import { GlassCard } from "../components/ui/GlassCard";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { StatsCard } from "../components/dashboard/StatsCard";
-import { ProgressBar } from "../components/ui/ProgressBar";
-import { Badge } from "../components/ui/Badge";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorState } from "../components/ui/ErrorState";
+import { Button } from "../components/ui/Button";
+import { Skeleton } from "../components/ui/Skeleton";
+import { Avatar } from "../components/ui/Avatar";
 import { AnimatedCounter } from "../components/ui/AnimatedCounter";
 import { AreaTrend } from "../components/charts/AreaTrend";
-import { MiniBars } from "../components/charts/MiniBars";
 import { DonutChart } from "../components/charts/DonutChart";
-import { ActivityHeatmap, HeatmapLegend } from "../components/charts/ActivityHeatmap";
 
-function Delta({ value }: { value: number }) {
-  const up = value >= 0;
+function LoadingGrid() {
   return (
-    <span
-      className={
-        "inline-flex items-center gap-0.5 text-xs font-semibold " +
-        (up ? "text-emerald-400" : "text-rose-400")
-      }
-    >
-      {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-      {Math.abs(value)}%
-    </span>
-  );
-}
-
-function MetricTile({
-  icon, label, value, delta, hint, accent, delay = 0,
-}: {
-  icon: ReactNode; label: string; value: string; delta?: number; hint?: string; accent: string; delay?: number;
-}) {
-  return (
-    <GlassCard delay={delay} className="p-5">
-      <div className="flex items-start justify-between">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg ${accent}`}>
-          {icon}
-        </div>
-        {typeof delta === "number" && <Delta value={delta} />}
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-36 w-full rounded-3xl" />
+        ))}
       </div>
-      <p className="mt-4 text-2xl font-bold tracking-tight text-white">{value}</p>
-      <p className="mt-1 text-sm font-semibold text-neutral-200">{label}</p>
-      {hint && <p className="mt-0.5 text-xs text-neutral-500">{hint}</p>}
-    </GlassCard>
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Skeleton className="h-72 w-full rounded-3xl xl:col-span-2" />
+        <Skeleton className="h-72 w-full rounded-3xl" />
+      </div>
+    </div>
   );
 }
 
-export function Analytics({ userId }: { userId?: string }) {
-  const { data } = useInboxSummary(userId);
-  const unread = data?.stats?.unread; // real when Gmail is linked
-  const topContact = contacts[0];
+export function Analytics({
+  userId,
+  onLinkGmail,
+}: {
+  userId?: string;
+  onLinkGmail?: () => void;
+}) {
+  const { data, isLoading, isError, error, refetch, isFetching } = useEmailAnalytics(userId);
+
+  const totals = data?.totals;
+  const trend = (data?.daily ?? []).map((d) => ({ label: d.label, a: d.sent, b: d.received }));
+  const segments = (data?.categories ?? []).map((c) => ({ name: c.name, value: c.count, color: c.color }));
+  const senders = data?.top_senders ?? [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
             <BarChart3 size={24} className="text-brand-400" /> Email Analytics
           </h1>
-          <Badge tone="info">Preview data</Badge>
+          {data?.gmail_linked && !data?.needs_reauth && (
+            <button
+              onClick={() => refetch()}
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-white/5 hover:text-white"
+              title="Refresh"
+            >
+              <RefreshCw size={16} className={isFetching ? "animate-spin" : ""} />
+            </button>
+          )}
         </div>
         <p className="mt-2 text-sm text-neutral-500">
-          Your communication patterns at a glance — volume, speed, reach and reach-back rates.
+          Live from your Gmail{data?.email_address ? ` — ${data.email_address}` : ""}.
         </p>
       </motion.div>
 
-      {/* Top metric row */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatsCard icon={<Send size={20} />} label="Emails Sent" value={182} description="this month" accent="from-indigo-500/40 to-blue-500/30" delay={0} />
-        <StatsCard icon={<Inbox size={20} />} label="Emails Received" value={438} description="this month" accent="from-sky-500/40 to-cyan-500/30" delay={0.05} />
-        <StatsCard icon={<MailOpen size={20} />} label="Unread" value={unread ?? 23} description={unread != null ? "live from Gmail" : "in your inbox"} accent="from-amber-500/40 to-orange-500/30" delay={0.1} />
-        <MetricTile icon={<Timer size={20} />} label="Avg Reply Time" value={replySpeed.average} delta={-12} hint="faster than last week" accent="from-emerald-500/40 to-teal-500/30" delay={0.15} />
-      </div>
+      {isLoading ? (
+        <LoadingGrid />
+      ) : isError ? (
+        <GlassCard className="p-4">
+          <ErrorState
+            title="Couldn't load analytics"
+            message={(error as Error)?.message}
+            onRetry={() => refetch()}
+          />
+        </GlassCard>
+      ) : !data?.gmail_linked ? (
+        <GlassCard className="p-2">
+          <EmptyState
+            icon={<Mail size={26} />}
+            title="Connect Gmail to see your analytics"
+            description="Link your Gmail account to see real sending volume, daily trends, category breakdowns and your top senders."
+            action={
+              onLinkGmail ? (
+                <Button onClick={onLinkGmail}>
+                  <Mail size={16} /> Connect Gmail
+                </Button>
+              ) : undefined
+            }
+          />
+        </GlassCard>
+      ) : data?.needs_reauth ? (
+        <GlassCard className="p-2">
+          <EmptyState
+            icon={<MailWarning size={26} />}
+            title="Re-link Gmail for read access"
+            description="Your Gmail was linked with send-only permission. Re-link once to grant read access so analytics can be computed."
+            action={
+              onLinkGmail ? (
+                <Button onClick={onLinkGmail}>
+                  <RefreshCw size={16} /> Re-link Gmail
+                </Button>
+              ) : undefined
+            }
+          />
+        </GlassCard>
+      ) : (
+        <>
+          {/* Top metric row — all live Gmail counts */}
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatsCard
+              icon={<Send size={20} />}
+              label="Emails Sent"
+              value={data.sent_30d ?? 0}
+              description={data.sent_30d_capped ? "last 30 days (1,000+)" : "last 30 days"}
+              accent="from-indigo-500/40 to-blue-500/30"
+              delay={0}
+            />
+            <StatsCard
+              icon={<InboxIcon size={20} />}
+              label="Emails Received"
+              value={data.received_30d ?? 0}
+              description={data.received_30d_capped ? "last 30 days (1,000+)" : "last 30 days"}
+              accent="from-sky-500/40 to-cyan-500/30"
+              delay={0.05}
+            />
+            <StatsCard
+              icon={<MailOpen size={20} />}
+              label="Unread"
+              value={totals?.unread ?? 0}
+              description="right now"
+              accent="from-amber-500/40 to-orange-500/30"
+              delay={0.1}
+            />
+            <StatsCard
+              icon={<Layers size={20} />}
+              label="In Inbox"
+              value={totals?.inbox ?? 0}
+              description="total messages"
+              accent="from-emerald-500/40 to-teal-500/30"
+              delay={0.15}
+            />
+          </div>
 
-      {/* Trends */}
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <SectionHeader title="Weekly Email Trend" icon={<TrendingUp size={16} />} subtitle="Sent vs received over the last 7 days" />
-          <GlassCard className="p-6">
-            <div className="mb-4 flex items-center gap-5 text-xs">
-              <span className="flex items-center gap-1.5 text-neutral-300"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" /> Sent</span>
-              <span className="flex items-center gap-1.5 text-neutral-300"><span className="h-2.5 w-2.5 rounded-full bg-cyan-400" /> Received</span>
+          {/* Trend + categories */}
+          <div className="grid gap-6 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <SectionHeader
+                title="Daily Email Trend"
+                icon={<TrendingUp size={16} />}
+                subtitle="Sent vs received over the last 7 days"
+              />
+              <GlassCard className="p-6">
+                <div className="mb-4 flex items-center gap-5 text-xs">
+                  <span className="flex items-center gap-1.5 text-neutral-300">
+                    <span className="h-2.5 w-2.5 rounded-full bg-brand-500" /> Sent
+                  </span>
+                  <span className="flex items-center gap-1.5 text-neutral-300">
+                    <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" /> Received
+                  </span>
+                </div>
+                <AreaTrend data={trend} aName="Sent" bName="Received" />
+              </GlassCard>
             </div>
-            <AreaTrend data={weeklyTrend} aName="Sent" bName="Received" />
-          </GlassCard>
-        </div>
 
-        <div>
-          <SectionHeader title="Email Categories" icon={<PieIcon size={16} />} subtitle="How your inbox breaks down" />
-          <GlassCard className="p-6">
-            <DonutChart data={categorySegments} centerLabel="share" />
-          </GlassCard>
-        </div>
-      </div>
+            <div>
+              <SectionHeader
+                title="Email Categories"
+                icon={<PieIcon size={16} />}
+                subtitle="Gmail's category breakdown"
+              />
+              <GlassCard className="p-6">
+                <DonutChart data={segments} centerLabel="emails" />
+              </GlassCard>
+            </div>
+          </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div>
-          <SectionHeader title="Monthly Volume" icon={<CalendarRange size={16} />} subtitle="Emails per week" />
-          <GlassCard className="p-6">
-            <MiniBars data={monthlyTrend} />
-          </GlassCard>
-        </div>
+          {/* Mailbox totals + top senders */}
+          <div className="grid gap-6 xl:grid-cols-3">
+            <div>
+              <SectionHeader title="Mailbox Totals" icon={<MessagesSquare size={16} />} subtitle="All time" />
+              <GlassCard className="space-y-3 p-6">
+                <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Emails</p>
+                    <p className="text-xs text-neutral-500">every message in this account</p>
+                  </div>
+                  <span className="text-xl font-bold text-white tabular-nums">
+                    <AnimatedCounter value={totals?.messages ?? 0} />
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Conversations</p>
+                    <p className="text-xs text-neutral-500">total threads</p>
+                  </div>
+                  <span className="text-xl font-bold text-white tabular-nums">
+                    <AnimatedCounter value={totals?.threads ?? 0} />
+                  </span>
+                </div>
+              </GlassCard>
+            </div>
 
-        {/* Reply speed analytics */}
-        <div className="xl:col-span-2">
-          <SectionHeader title="Reply Speed Analytics" icon={<Gauge size={16} />} subtitle="How quickly you respond" />
-          <GlassCard className="p-6">
-            <div className="grid gap-5 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                <Zap size={16} className="text-emerald-400" />
-                <p className="mt-2 text-xl font-bold text-white">{replySpeed.fastest}</p>
-                <p className="text-xs text-neutral-500">Fastest reply</p>
-              </div>
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                <Timer size={16} className="text-brand-400" />
-                <p className="mt-2 text-xl font-bold text-white">{replySpeed.average}</p>
-                <p className="text-xs text-neutral-500">Average reply</p>
-              </div>
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                <Flame size={16} className="text-rose-400" />
-                <p className="mt-2 text-xl font-bold text-white">{replySpeed.slowest}</p>
-                <p className="text-xs text-neutral-500">Slowest reply</p>
-              </div>
+            <div className="xl:col-span-2">
+              <SectionHeader
+                title="Top Senders"
+                icon={<Users size={16} />}
+                subtitle="Who fills your inbox — from your latest 50 emails"
+              />
+              <GlassCard className="p-6">
+                {senders.length ? (
+                  <div className="space-y-3">
+                    {senders.map((s) => (
+                      <div key={s.email} className="flex items-center gap-3">
+                        <Avatar name={s.name} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-white">{s.name}</p>
+                          <p className="truncate text-xs text-neutral-500">{s.email}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-xs font-bold tabular-nums text-neutral-200">
+                          {s.count} email{s.count === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<Users size={24} />}
+                    title="No senders yet"
+                    description="Your recent inbox is empty."
+                  />
+                )}
+              </GlassCard>
             </div>
-            <div className="mt-6 space-y-4">
-              <ProgressBar label="Response rate" hint={`${replySpeed.responseRate}%`} value={replySpeed.responseRate} accent="from-emerald-500 to-teal-500" />
-              <ProgressBar label="Open rate" hint={`${replySpeed.openRate}%`} value={replySpeed.openRate} accent="from-brand-500 to-fuchsia-500" delay={0.1} />
-            </div>
-          </GlassCard>
-        </div>
-      </div>
-
-      {/* Reach + heatmap */}
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-4">
-          <SectionHeader title="Top Contacts" icon={<User size={16} />} />
-          <GlassCard className="flex items-center gap-4 p-5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white shadow-lg">
-              <User size={22} />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-white">{topContact.name}</p>
-              <p className="text-xs text-neutral-500">Most contacted person</p>
-            </div>
-            <span className="ml-auto text-lg font-bold text-white tabular-nums">
-              <AnimatedCounter value={topContact.conversations} />
-            </span>
-          </GlassCard>
-          <GlassCard className="flex items-center gap-4 p-5" delay={0.05}>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-purple-500 text-white shadow-lg">
-              <Building2 size={22} />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-white">{topContact.company}</p>
-              <p className="text-xs text-neutral-500">Most contacted company</p>
-            </div>
-            <span className="ml-auto text-lg font-bold text-white tabular-nums">
-              <AnimatedCounter value={64} />
-            </span>
-          </GlassCard>
-        </div>
-
-        <div className="xl:col-span-2">
-          <SectionHeader title="Activity Heatmap" icon={<Flame size={16} />} subtitle="Emails handled per day" action={<HeatmapLegend />} />
-          <GlassCard className="p-6">
-            <ActivityHeatmap weeks={activityWeeks} />
-          </GlassCard>
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import {
-  Inbox as InboxIcon, Sparkles, Star, Tag, Newspaper, Wallet, Plane, Users, Bell,
+  Inbox as InboxIcon, Sparkles, Star, Tag, Newspaper, Users, Bell, Flag, MailOpen, MessagesSquare,
 } from "lucide-react";
 import type { InboxTab } from "../lib/types";
 import { Tabs } from "../components/ui/Tabs";
@@ -10,13 +10,15 @@ import { InboxMessageList } from "../components/inbox/InboxMessageList";
 
 const TABS: { key: InboxTab; label: string; icon: ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <Sparkles size={14} /> },
-  { key: "important", label: "Important", icon: <Star size={14} /> },
-  { key: "promotions", label: "Promotions", icon: <Tag size={14} /> },
-  { key: "newsletters", label: "Newsletters", icon: <Newspaper size={14} /> },
-  { key: "finance", label: "Finance", icon: <Wallet size={14} /> },
-  { key: "travel", label: "Travel", icon: <Plane size={14} /> },
+  { key: "primary", label: "Primary", icon: <InboxIcon size={14} /> },
+  { key: "important", label: "Important", icon: <Flag size={14} /> },
+  { key: "starred", label: "Starred", icon: <Star size={14} /> },
+  { key: "unread", label: "Unread", icon: <MailOpen size={14} /> },
   { key: "social", label: "Social", icon: <Users size={14} /> },
+  { key: "promotions", label: "Promotions", icon: <Tag size={14} /> },
   { key: "updates", label: "Updates", icon: <Bell size={14} /> },
+  { key: "forums", label: "Forums", icon: <MessagesSquare size={14} /> },
+  { key: "newsletters", label: "Newsletters", icon: <Newspaper size={14} /> },
 ];
 
 export function InboxCenter({

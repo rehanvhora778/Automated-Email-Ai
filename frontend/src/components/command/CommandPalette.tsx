@@ -4,7 +4,7 @@ import {
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search, LayoutDashboard, Bot, Reply, Inbox, BarChart3, Calendar, Users,
+  Search, LayoutDashboard, Bot, Reply, Inbox, BarChart3, Users,
   Bell, Settings as SettingsIcon, User, PenLine, Mail, LogOut, FileText,
   Send, Languages, Wand2, RefreshCw, CornerDownLeft, Command as CommandIcon,
   Sparkles, SpellCheck, AlignLeft, ShieldAlert, Type, Clock,
@@ -79,7 +79,6 @@ export function CommandPalette({
       { id: "nav-reply", group: "Navigation", label: "Smart Reply", icon: <Reply size={16} />, keywords: "respond reply", run: go("smartReply") },
       { id: "nav-inbox", group: "Navigation", label: "Inbox Summary", icon: <Inbox size={16} />, keywords: "briefing mail", run: go("inbox") },
       { id: "nav-analytics", group: "Navigation", label: "Analytics", icon: <BarChart3 size={16} />, keywords: "stats charts metrics", run: go("analytics") },
-      { id: "nav-calendar", group: "Navigation", label: "Calendar", icon: <Calendar size={16} />, keywords: "meetings events schedule", run: go("calendar") },
       { id: "nav-contacts", group: "Navigation", label: "Contacts", icon: <Users size={16} />, keywords: "people company", run: go("contacts") },
       { id: "nav-notifications", group: "Navigation", label: "Notifications", icon: <Bell size={16} />, keywords: "alerts", run: go("notifications") },
       { id: "nav-settings", group: "Navigation", label: "Settings", icon: <SettingsIcon size={16} />, keywords: "preferences config", run: go("settings") },
