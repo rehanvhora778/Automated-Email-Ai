@@ -1,17 +1,17 @@
 import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
-  Settings as SettingsIcon, Palette, Cpu, Plug, BellRing, ShieldCheck,
-  Mail, HardDrive, KeyRound, Check, Monitor, Globe, LogOut, Smartphone,
+  Settings as SettingsIcon, Mail, KeyRound, ShieldCheck, LogOut,
+  RefreshCw, Unlink, Eye, EyeOff, Check, AlertTriangle, User,
 } from "lucide-react";
 import { GlassCard } from "../components/ui/GlassCard";
-import { Toggle } from "../components/ui/Toggle";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
-import { Tabs } from "../components/ui/Tabs";
-import { cn } from "../lib/cn";
+import { supabase } from "../supabaseClient";
 
-function Row({ icon, title, desc, action }: { icon: ReactNode; title: string; desc?: string; action: ReactNode }) {
+function Row({ icon, title, desc, action }: { icon: ReactNode; title: string; desc?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-neutral-300">{icon}</div>
@@ -19,147 +19,256 @@ function Row({ icon, title, desc, action }: { icon: ReactNode; title: string; de
         <p className="font-semibold text-white">{title}</p>
         {desc && <p className="text-xs text-neutral-500">{desc}</p>}
       </div>
-      <div className="shrink-0">{action}</div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
 
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+function SectionTitle({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/25"
-    >
-      {options.map((o) => <option key={o} value={o} className="bg-ink-900">{o}</option>)}
-    </select>
+    <div className="mb-1">
+      <h2 className="flex items-center gap-2 text-lg font-bold text-white">{icon} {title}</h2>
+      <p className="text-xs text-neutral-500">{desc}</p>
+    </div>
   );
 }
 
-export function Settings({ userEmail, onLinkGmail }: { userEmail?: string; onLinkGmail?: () => void }) {
-  const [tab, setTab] = useState("appearance");
-  const [theme, setTheme] = useState("Dark");
-  const [accent, setAccent] = useState("Indigo");
-  const [language, setLanguage] = useState("English");
-  const [model, setModel] = useState("Mistral Medium");
-  const [notif, setNotif] = useState({ aiFinished: true, emailSent: true, mentions: false, weekly: true });
+/** What the linked Google token is allowed to do, parsed from its OAuth scopes. */
+function tokenCapabilities(scope?: string) {
+  const s = scope ?? "";
+  return {
+    send: s.includes("gmail.send"),
+    read: s.includes("gmail.readonly"),
+    actions: s.includes("gmail.modify"),
+  };
+}
 
-  const accents = [
-    { name: "Indigo", class: "from-indigo-500 to-blue-500" },
-    { name: "Violet", class: "from-violet-500 to-purple-500" },
-    { name: "Emerald", class: "from-emerald-500 to-teal-500" },
-    { name: "Rose", class: "from-rose-500 to-pink-500" },
-  ];
+export function Settings({
+  userId,
+  userEmail,
+  onLinkGmail,
+  onLogout,
+}: {
+  userId: string;
+  userEmail?: string;
+  onLinkGmail?: () => void;
+  onLogout?: () => void;
+}) {
+  const queryClient = useQueryClient();
 
-  const tabs = [
-    { key: "appearance", label: "Appearance", icon: <Palette size={15} /> },
-    { key: "ai", label: "AI", icon: <Cpu size={15} /> },
-    { key: "connections", label: "Connections", icon: <Plug size={15} /> },
-    { key: "notifications", label: "Notifications", icon: <BellRing size={15} /> },
-    { key: "security", label: "Security", icon: <ShieldCheck size={15} /> },
-  ];
+  // --- Real Gmail link status (reads the user's own profile row via RLS) ---
+  const gmailStatus = useQuery({
+    queryKey: ["gmail-status", userId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("gmail_token")
+        .eq("id", userId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const token = data?.gmail_token as { scope?: string } | null;
+      return { linked: !!token, ...tokenCapabilities(token?.scope) };
+    },
+    enabled: !!userId,
+    staleTime: 0,
+    refetchOnWindowFocus: true, // picks up the new token when you return from the Google tab
+  });
+
+  const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+
+  const handleUnlink = async () => {
+    if (!confirmUnlink) {
+      setConfirmUnlink(true);
+      setTimeout(() => setConfirmUnlink(false), 5000);
+      return;
+    }
+    setUnlinking(true);
+    const { error } = await supabase.from("profiles").update({ gmail_token: null }).eq("id", userId);
+    setUnlinking(false);
+    setConfirmUnlink(false);
+    if (error) {
+      toast.error(`Could not unlink Gmail: ${error.message}`);
+      return;
+    }
+    // Every surface in the app reads Gmail, so drop all cached data.
+    queryClient.invalidateQueries();
+    toast.success("Gmail unlinked. Link it again anytime.");
+  };
+
+  // --- Real password reset for the account email (Supabase auth) ---
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSavingPassword(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    toast.success("Password updated. Use the new password next time you sign in.");
+  };
+
+  const s = gmailStatus.data;
+  const missingScopes = s?.linked && (!s.read || !s.actions || !s.send);
+
+  const inputClass =
+    "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-white/25";
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
           <SettingsIcon size={24} className="text-brand-400" /> Settings
         </h1>
-        <p className="mt-2 text-sm text-neutral-500">Personalise your workspace, AI and connected accounts.</p>
+        <p className="mt-2 text-sm text-neutral-500">Your account, Gmail connection and password — all live, no placeholders.</p>
       </motion.div>
 
-      <Tabs items={tabs} active={tab} onChange={setTab} />
-
-      {tab === "appearance" && (
-        <GlassCard className="space-y-4 p-6">
-          <Row icon={<Monitor size={18} />} title="Theme" desc="Premium dark theme is optimised for long sessions." action={<Select value={theme} onChange={setTheme} options={["Dark", "Midnight", "System"]} />} />
-          <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-            <p className="font-semibold text-white">Accent color</p>
-            <p className="mb-3 text-xs text-neutral-500">Used across gradients and highlights.</p>
-            <div className="flex gap-3">
-              {accents.map((a) => (
-                <button
-                  key={a.name}
-                  onClick={() => setAccent(a.name)}
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg transition-transform hover:scale-110",
-                    a.class,
-                    accent === a.name && "ring-2 ring-white ring-offset-2 ring-offset-ink-900"
-                  )}
-                  aria-label={a.name}
-                >
-                  {accent === a.name && <Check size={16} className="text-white" />}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Row icon={<Globe size={18} />} title="Language" action={<Select value={language} onChange={setLanguage} options={["English", "Español", "Français", "Deutsch", "हिन्दी"]} />} />
+      {/* ---------- Account ---------- */}
+      <section className="space-y-3">
+        <SectionTitle icon={<User size={17} className="text-brand-400" />} title="Account" desc="The email you signed up with." />
+        <GlassCard className="space-y-3 p-5">
+          <Row
+            icon={<Mail size={18} />}
+            title={userEmail ?? "Unknown"}
+            desc="Signed in with email and password."
+            action={<Badge tone="success"><Check size={11} /> Signed in</Badge>}
+          />
+          <Row
+            icon={<LogOut size={18} className="text-rose-400" />}
+            title="Sign out"
+            desc="Log out of this device."
+            action={<Button variant="danger" onClick={onLogout}><LogOut size={15} /> Sign out</Button>}
+          />
         </GlassCard>
-      )}
+      </section>
 
-      {tab === "ai" && (
-        <GlassCard className="space-y-4 p-6">
-          <Row icon={<Cpu size={18} />} title="AI model" desc="The engine powering drafts, replies and summaries." action={<Select value={model} onChange={setModel} options={["Mistral Medium", "Mistral Large", "Mistral Small"]} />} />
-          <Row icon={<KeyRound size={18} />} title="API key" desc="Managed securely on the server (backend .env)." action={<Badge tone="success"><Check size={11} /> Configured</Badge>} />
-          <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-            <p className="mb-2 font-semibold text-white">Custom API key (optional)</p>
-            <input
-              type="password"
-              placeholder="sk-•••••••••••••••••••••"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-white/25"
-            />
-            <p className="mt-2 text-xs text-neutral-600">Leave blank to use the workspace default.</p>
-          </div>
-        </GlassCard>
-      )}
-
-      {tab === "connections" && (
-        <GlassCard className="space-y-4 p-6">
+      {/* ---------- Gmail connection ---------- */}
+      <section className="space-y-3">
+        <SectionTitle icon={<Mail size={17} className="text-rose-400" />} title="Gmail connection" desc="Powers sending, inbox summaries, analytics and agent actions." />
+        <GlassCard className="space-y-3 p-5">
           <Row
             icon={<Mail size={18} className="text-rose-400" />}
             title="Gmail"
-            desc={userEmail ? `Signed in as ${userEmail}` : "Send and read email"}
-            action={<Button variant="glass" onClick={onLinkGmail}><Mail size={15} /> Link / Re-link</Button>}
+            desc={
+              gmailStatus.isLoading ? "Checking connection…"
+                : !s?.linked ? "Not linked yet — connect to unlock every feature."
+                : missingScopes ? "Linked, but missing permissions — re-link to grant full access."
+                : "Linked with full access (send, read, actions)."
+            }
+            action={
+              <div className="flex items-center gap-2">
+                {gmailStatus.isLoading ? (
+                  <Badge tone="neutral">Checking…</Badge>
+                ) : s?.linked ? (
+                  missingScopes
+                    ? <Badge tone="warning"><AlertTriangle size={11} /> Partial</Badge>
+                    : <Badge tone="success"><Check size={11} /> Connected</Badge>
+                ) : (
+                  <Badge tone="danger">Not linked</Badge>
+                )}
+                <button
+                  onClick={() => gmailStatus.refetch()}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-neutral-400 transition-colors hover:text-white"
+                  title="Refresh status"
+                >
+                  <RefreshCw size={14} className={gmailStatus.isFetching ? "animate-spin" : undefined} />
+                </button>
+              </div>
+            }
           />
-          <Row icon={<HardDrive size={18} className="text-emerald-400" />} title="Google Drive" desc="Attach files from Drive." action={<Button variant="glass"><HardDrive size={15} /> Connect</Button>} />
-        </GlassCard>
-      )}
 
-      {tab === "notifications" && (
-        <GlassCard className="space-y-4 p-6">
-          <Row icon={<BellRing size={18} />} title="AI finished tasks" desc="When a draft or summary is ready." action={<Toggle checked={notif.aiFinished} onChange={(v) => setNotif((n) => ({ ...n, aiFinished: v }))} />} />
-          <Row icon={<Mail size={18} />} title="Email sent" desc="Confirmation when mail is delivered." action={<Toggle checked={notif.emailSent} onChange={(v) => setNotif((n) => ({ ...n, emailSent: v }))} />} />
-          <Row icon={<Globe size={18} />} title="Mentions" action={<Toggle checked={notif.mentions} onChange={(v) => setNotif((n) => ({ ...n, mentions: v }))} />} />
-          <Row icon={<BellRing size={18} />} title="Weekly digest" desc="A Monday summary of last week." action={<Toggle checked={notif.weekly} onChange={(v) => setNotif((n) => ({ ...n, weekly: v }))} />} />
-        </GlassCard>
-      )}
-
-      {tab === "security" && (
-        <GlassCard className="space-y-4 p-6">
-          <Row icon={<ShieldCheck size={18} className="text-emerald-400" />} title="Two-factor authentication" desc="Add an extra layer of security." action={<Badge tone="warning">Off</Badge>} />
-          <Row icon={<KeyRound size={18} />} title="Change password" action={<Button variant="glass">Update</Button>} />
-          <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-            <p className="mb-3 font-semibold text-white">Active sessions</p>
-            <div className="space-y-3">
+          {s?.linked && (
+            <div className="grid grid-cols-3 gap-2">
               {[
-                { icon: <Monitor size={16} />, name: "Windows · Chrome", meta: "This device · active now", current: true },
-                { icon: <Smartphone size={16} />, name: "iPhone · Safari", meta: "Mumbai · 2h ago", current: false },
-              ].map((s) => (
-                <div key={s.name} className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-neutral-300">{s.icon}</div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-white">{s.name}</p>
-                    <p className="text-xs text-neutral-500">{s.meta}</p>
-                  </div>
-                  {s.current ? <Badge tone="success">Current</Badge> : (
-                    <button className="flex items-center gap-1.5 text-xs font-semibold text-rose-400 hover:text-rose-300"><LogOut size={13} /> Revoke</button>
-                  )}
+                { label: "Send email", ok: s.send },
+                { label: "Read inbox", ok: s.read },
+                { label: "Inbox actions", ok: s.actions },
+              ].map((cap) => (
+                <div key={cap.label} className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
+                  {cap.ok
+                    ? <Check size={14} className="shrink-0 text-emerald-400" />
+                    : <AlertTriangle size={14} className="shrink-0 text-amber-400" />}
+                  <span className="truncate text-xs font-medium text-neutral-300">{cap.label}</span>
                 </div>
               ))}
             </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="primary" onClick={onLinkGmail}>
+              <Mail size={15} /> {s?.linked ? "Re-link Gmail" : "Link Gmail"}
+            </Button>
+            {s?.linked && (
+              <Button variant="danger" onClick={handleUnlink} disabled={unlinking}>
+                <Unlink size={15} /> {unlinking ? "Unlinking…" : confirmUnlink ? "Click again to confirm" : "Unlink"}
+              </Button>
+            )}
+          </div>
+          <p className="text-[11px] text-neutral-600">
+            Linking opens Google in a new tab. When you're done, come back here — the status refreshes automatically.
+          </p>
+        </GlassCard>
+      </section>
+
+      {/* ---------- Reset password ---------- */}
+      <section className="space-y-3">
+        <SectionTitle icon={<ShieldCheck size={17} className="text-emerald-400" />} title="Reset password" desc={`Changes the sign-in password for ${userEmail ?? "your account"}.`} />
+        <GlassCard className="space-y-4 p-5">
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="New password (min. 6 characters)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className={inputClass}
+              autoComplete="new-password"
+            />
+            <button
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <input
+            type={showPassword ? "text" : "password"}
+            placeholder="Confirm new password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleResetPassword()}
+            className={inputClass}
+            autoComplete="new-password"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] text-neutral-600">
+              Takes effect immediately — you stay signed in on this device.
+            </p>
+            <Button
+              variant="primary"
+              onClick={handleResetPassword}
+              disabled={savingPassword || !newPassword || !confirmPassword}
+            >
+              <KeyRound size={15} /> {savingPassword ? "Updating…" : "Update password"}
+            </Button>
           </div>
         </GlassCard>
-      )}
+      </section>
     </div>
   );
 }

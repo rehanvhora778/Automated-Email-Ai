@@ -108,7 +108,9 @@ export function CopilotView({
           {view === "notifications" && (
             <Notifications userId={user.id} onLinkGmail={onLinkGmail} />
           )}
-          {view === "settings" && <Settings userEmail={user.email} onLinkGmail={onLinkGmail} />}
+          {view === "settings" && (
+            <Settings userId={user.id} userEmail={user.email} onLinkGmail={onLinkGmail} onLogout={onLogout} />
+          )}
           {view === "profile" && (
             <Profile userEmail={user.email} userId={user.id} onLinkGmail={onLinkGmail} />
           )}
