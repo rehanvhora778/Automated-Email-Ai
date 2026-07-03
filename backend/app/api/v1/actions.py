@@ -115,11 +115,9 @@ async def send_email(
     to_email: str = Form(...),
     subject: str = Form(""),
     body: str = Form(""),
-    attach_resume: bool = Form(False),
     file: UploadFile = File(None),   # optional user-picked attachment
 ):
     print(f"DEBUG: Email request received for user: {user_id}")
-    print(f"DEBUG: Attach resume flag is: {attach_resume}")
 
     # Read the optional uploaded file now (UploadFile read is async)
     extra_file_bytes = None
@@ -153,32 +151,7 @@ async def send_email(
         mime_msg['subject'] = subject
         mime_msg.attach(MIMEText(body, 'plain'))
 
-        # 2. Attach ORIGINAL PDF resume (optional)
-        if attach_resume:
-            print("DEBUG: Attempting to attach resume...")
-            resume_res = supabase.table("resumes").select("file_path").eq("user_id", user_id).execute()
-
-            if resume_res.data and resume_res.data[0].get('file_path'):
-                file_path = resume_res.data[0]['file_path']
-                print(f"DEBUG: File path found in DB: {file_path}")
-
-                try:
-                    # Download bytes
-                    file_bytes = supabase.storage.from_("resumes").download(file_path)
-                    print(f"DEBUG: Successfully downloaded {len(file_bytes)} bytes from storage")
-
-                    part = MIMEBase('application', 'pdf')
-                    part.set_payload(file_bytes)
-                    encoders.encode_base64(part)
-                    part.add_header('Content-Disposition', f'attachment; filename="Resume.pdf"')
-                    mime_msg.attach(part)
-                    print("DEBUG: Resume attached to MIME message")
-                except Exception as storage_err:
-                    print(f"DEBUG ERROR: Storage download failed: {storage_err}")
-            else:
-                print("DEBUG ERROR: No file_path found in resumes table. Did you re-upload?")
-
-        # 3. Attach the user-picked file (any type), if provided
+        # 2. Attach the user-picked file (any type), if provided
         if extra_file_bytes is not None:
             maintype, _, subtype = extra_file_type.partition("/")
             part = MIMEBase(maintype or "application", subtype or "octet-stream")

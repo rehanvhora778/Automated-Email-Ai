@@ -19,7 +19,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.db.supabase import supabase, get_user_profile, get_user_resume
+from app.db.supabase import supabase, get_user_profile
 from app.services.ai_service import SecretaryAI
 from app.services.gmail_service import build_user_gmail_service
 
@@ -98,18 +98,16 @@ async def agent_run(req: AgentRequest):
         try:
             yield _event({"type": "status", "message": "Thinking…"})
 
-            # Profile + resume for personalisation (best effort).
-            user_name, resume = "User", ""
+            # Profile for personalisation (best effort).
+            user_name = "User"
             try:
                 profile = get_user_profile(req.user_id)
                 if profile:
                     user_name = profile.get("full_name") or "User"
-                r = get_user_resume(req.user_id)
-                resume = r.get("raw_text") if isinstance(r, dict) else (r or "")
             except Exception as e:
                 print(f"agent: profile fetch warning: {e}")
 
-            plan = ai.agent_plan(req.command, user_name, resume)
+            plan = ai.agent_plan(req.command, user_name)
             intent = plan.get("intent", "general")
             if intent not in STEP_PLANS:
                 intent = "general"

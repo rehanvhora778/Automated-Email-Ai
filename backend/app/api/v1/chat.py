@@ -10,7 +10,6 @@ ai_secretary = SecretaryAI()
 @router.post("/")
 async def chat_with_secretary(req: ChatRequest):
     profile_data = {"full_name": "User", "signature": ""}
-    resume_context = ""
     chat_history = []
 
     # 0. Ensure we have a conversation thread to write into
@@ -25,17 +24,13 @@ async def chat_with_secretary(req: ChatRequest):
         print(f"DEBUG: Started new conversation {conversation_id}")
 
     try:
-        # 1. Profile & Resume
+        # 1. Profile
         profile_res = supabase.table("profiles").select("*").eq("id", req.user_id).execute()
         if profile_res.data:
             profile_data = profile_res.data[0]
             print(f"DEBUG: Profile Found - {profile_data.get('full_name')}")
         else:
             print(f"DEBUG: No Profile found for ID: {req.user_id}")
-
-        resume_res = supabase.table("resumes").select("raw_text").eq("user_id", req.user_id).execute()
-        if resume_res.data and resume_res.data[0].get('raw_text'):
-            resume_context = resume_res.data[0]['raw_text'][:1000]
 
         # 2. Load memory for THIS conversation only (not all of the user's chats)
         history_res = supabase.table("chat_messages") \
@@ -57,7 +52,6 @@ async def chat_with_secretary(req: ChatRequest):
         ai_response = ai_secretary.generate_response(
             user_input=req.message,
             profile_data=profile_data,
-            resume_context=resume_context,
             chat_history=chat_history
         )
 

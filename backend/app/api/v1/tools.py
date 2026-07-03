@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.ai_service import SecretaryAI
-from app.db.supabase import get_user_profile, get_user_resume
+from app.db.supabase import get_user_profile
 
 router = APIRouter()
 ai = SecretaryAI()
@@ -29,22 +29,17 @@ class ToolRequest(BaseModel):
 
 
 def _resolve_user(user_id: Optional[str]):
-    """Look up the user's name, signature and resume text (best-effort)."""
-    user_name, signature, resume = "User", "", ""
+    """Look up the user's name and signature (best-effort)."""
+    user_name, signature = "User", ""
     if user_id:
         try:
             profile = get_user_profile(user_id)
             if profile:
                 user_name = profile.get("full_name") or "User"
                 signature = profile.get("signature") or ""
-            resume_row = get_user_resume(user_id)
-            if isinstance(resume_row, dict):
-                resume = resume_row.get("raw_text") or ""
-            elif isinstance(resume_row, str):
-                resume = resume_row
         except Exception as e:
-            print(f"tool: profile/resume fetch warning: {e}")
-    return user_name, signature, resume
+            print(f"tool: profile fetch warning: {e}")
+    return user_name, signature
 
 
 @router.post("/tool")
@@ -52,13 +47,12 @@ async def run_tool(req: ToolRequest):
     if req.action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action '{req.action}'")
 
-    user_name, signature, resume = _resolve_user(req.user_id)
+    user_name, signature = _resolve_user(req.user_id)
     result = ai.run_tool(
         action=req.action,
         input_text=req.input,
         context=req.context or "",
         user_name=user_name,
-        resume=resume,
         signature=signature,
     )
     if result.get("error"):
@@ -71,7 +65,7 @@ async def run_tool_stream(req: ToolRequest):
     if req.action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action '{req.action}'")
 
-    user_name, signature, resume = _resolve_user(req.user_id)
+    user_name, signature = _resolve_user(req.user_id)
 
     def generate():
         try:
@@ -80,7 +74,6 @@ async def run_tool_stream(req: ToolRequest):
                 input_text=req.input,
                 context=req.context or "",
                 user_name=user_name,
-                resume=resume,
                 signature=signature,
             ):
                 yield chunk

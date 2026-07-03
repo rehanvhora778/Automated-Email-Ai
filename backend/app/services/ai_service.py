@@ -31,23 +31,22 @@ class SecretaryAI:
         self.model = "mistral-medium-latest" 
         self.client = Mistral(api_key=api_key)
 
-    def generate_response(self, user_input, profile_data, resume_context, chat_history=[]):
+    def generate_response(self, user_input, profile_data, chat_history=[]):
         # User details setup
         user_name = profile_data.get('full_name', 'User')
         signature = profile_data.get('signature') or f"Best regards,\n{user_name}"
-        
+
         system_instructions = f"""
-        You are an Smart Email Assistant. 
+        You are an Smart Email Assistant.
         USER PROFILE: {json.dumps(profile_data)}
-        RESUME: {resume_context[:1000]}
 
         CORE LOGIC:
         1. IDENTIFY INTENT: Determine the user's LATEST request goal (e.g., writing a specific email).
         2. TASK ISOLATION: Focus ONLY on the latest request. Ignore specific data requirements (like flight numbers or dates) from previous, unrelated tasks in the chat history.
-        3. DATA VALIDATION: 
+        3. DATA VALIDATION:
            - If the current task needs specific details (names, dates, numbers) that are NOT in the message or profile, set "status": "missing_info".
            - Do NOT use placeholders like [Company Name] or [Date]. If you don't have them, ASK for them.
-        4. DRAFTING: If all info is present, generate a high-quality draft using the user's resume for personalization.
+        4. DRAFTING: If all info is present, generate a high-quality draft from the message and profile details.
         5. SIGNATURE: End the draft strictly with:
         {signature}
 
@@ -202,11 +201,11 @@ suggestion "type" must be one of: reply, follow_up, respond, thank_you. Keep eve
         data.setdefault("high_priority", len(data.get("important", [])))
         return data
 
-    def _build_tool_prompts(self, action, input_text, context="", user_name="User", resume="", signature=""):
+    def _build_tool_prompts(self, action, input_text, context="", user_name="User", signature=""):
         """Shared prompt construction for the writing tools (used by run_tool + stream_tool)."""
         sign = signature or f"Best regards,\n{user_name}"
         instructions = {
-            "cover_letter": f"Write a compelling, concise cover letter for {user_name}. Use the resume for personalization. End with:\n{sign}",
+            "cover_letter": f"Write a compelling, concise cover letter for {user_name} based on the role and details in INPUT and CONTEXT. End with:\n{sign}",
             "cold_email": f"Write a persuasive, concise cold outreach email for {user_name}. Strong hook, one clear ask. End with:\n{sign}",
             "translate": "Translate the user's INPUT. If CONTEXT names a target language use it, otherwise translate to English. Preserve tone and formatting. Return only the translation.",
             "improve": "Improve the INPUT's clarity, grammar, tone and impact without changing its meaning or language. Return only the improved text.",
@@ -223,23 +222,21 @@ suggestion "type" must be one of: reply, follow_up, respond, thank_you. Keep eve
         }
         instruction = instructions.get(action, "Complete the user's request using INPUT and CONTEXT. Return only the result text.")
         system_prompt = f"You are an elite writing assistant. {instruction}"
-        resume_actions = ("cover_letter", "cold_email", "linkedin_outreach", "interview_email", "follow_up")
-        resume_bit = f"\n\nUSER RESUME (for personalization):\n{resume[:1500]}" if resume and action in resume_actions else ""
-        user_prompt = f"CONTEXT: {context or 'none'}\n\nINPUT:\n{input_text}{resume_bit}"
+        user_prompt = f"CONTEXT: {context or 'none'}\n\nINPUT:\n{input_text}"
         return system_prompt, user_prompt
 
-    def run_tool(self, action, input_text, context="", user_name="User", resume="", signature=""):
+    def run_tool(self, action, input_text, context="", user_name="User", signature=""):
         """Generic single-output writing tool (cover letter, cold email, translate, etc.)."""
-        system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context, user_name, resume, signature)
+        system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context, user_name, signature)
         try:
             return {"content": (self._chat_text(system_prompt, user_prompt) or "").strip()}
         except Exception as e:
             print(f"run_tool error: {e}")
             return {"content": "", "error": str(e)}
 
-    def stream_tool(self, action, input_text, context="", user_name="User", resume="", signature=""):
+    def stream_tool(self, action, input_text, context="", user_name="User", signature=""):
         """Same as run_tool, but yields text deltas as they arrive from Mistral."""
-        system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context, user_name, resume, signature)
+        system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context, user_name, signature)
         stream = self.client.chat.stream(
             model=self.model,
             messages=[
@@ -252,7 +249,7 @@ suggestion "type" must be one of: reply, follow_up, respond, thank_you. Keep eve
             if delta:
                 yield delta
 
-    def agent_plan(self, command, user_name="User", resume=""):
+    def agent_plan(self, command, user_name="User"):
         """Classify an agent command and prepare any content it needs.
 
         Returns {intent, message, to, subject, body}. For drafting intents the
@@ -272,8 +269,7 @@ Rules:
 - compose_email / draft_reply / schedule_meeting: write a complete, polished, ready-to-send draft in "body" (natural sign-off with {user_name}), plus a "subject". For schedule_meeting, draft a message proposing specific times.
 - summarize_inbox / archive_promotions / find_contact: leave "subject" and "body" empty; the app performs these.
 - general: put a helpful answer in "body".
-- Never use bracket placeholders like [Name]. Personalise with the resume when drafting.
-RESUME (for personalisation): {resume[:800]}"""
+- Never use bracket placeholders like [Name]; write naturally around anything unknown."""
         try:
             data = self._chat_json(system_prompt, f"COMMAND: {command}")
         except Exception as e:

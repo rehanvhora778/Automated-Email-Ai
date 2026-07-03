@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, profile, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications
+from app.api.v1 import chat, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -21,10 +21,7 @@ app.add_middleware(
 # 1. Chat (Mistral AI logic)
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 
-# 2. Profile (Resume Upload logic)
-app.include_router(profile.router, prefix="/api/v1/profile", tags=["Profile"])
-
-# 3. Actions (Gmail Login & Send logic) - YE NAYA HAI
+# 2. Actions (Gmail Login & Send logic)
 app.include_router(actions.router, prefix="/api/v1/actions", tags=["Actions"])
 
 # 4. Auth (Signup that auto-confirms email so login works immediately)

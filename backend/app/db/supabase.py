@@ -15,8 +15,3 @@ supabase: Client = create_client(url, key)
 def get_user_profile(user_id: str):
     response = supabase.table("profiles").select("*").eq("id", user_id).execute()
     return response.data[0] if response.data else None
-
-# Helper function resume fetch karne ke liye
-def get_user_resume(user_id: str):
-    response = supabase.table("resumes").select("raw_text").eq("user_id", user_id).execute()
-    return response.data[0] if response.data else ""
