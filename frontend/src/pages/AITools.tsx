@@ -45,7 +45,7 @@ const CATEGORIES: { title: string; icon: ReactNode; tools: Tool[] }[] = [
       { key: "subject_generator", label: "Subject Generator", desc: "5 catchy subject lines", icon: <Type size={18} />, accent: "from-violet-500/40 to-purple-500/30" },
       { key: "follow_up", label: "Follow-up Generator", desc: "Polite, effective nudge", icon: <Clock size={18} />, accent: "from-amber-500/40 to-yellow-500/30" },
       { key: "cold_email", label: "Cold Email", desc: "Persuasive outreach", icon: <Send size={18} />, accent: "from-orange-500/40 to-red-500/30" },
-      { key: "cover_letter", label: "Cover Letter", desc: "Tailored to your resume", icon: <FileText size={18} />, accent: "from-emerald-500/40 to-teal-500/30" },
+      { key: "cover_letter", label: "Cover Letter", desc: "Tailored to the role", icon: <FileText size={18} />, accent: "from-emerald-500/40 to-teal-500/30" },
       { key: "linkedin_outreach", label: "LinkedIn Outreach", desc: "Connection notes & InMail", icon: <Users size={18} />, accent: "from-sky-500/40 to-blue-500/30" },
       { key: "interview_email", label: "Interview Email", desc: "Schedule, confirm, thank", icon: <Briefcase size={18} />, accent: "from-cyan-500/40 to-teal-500/30" },
     ],

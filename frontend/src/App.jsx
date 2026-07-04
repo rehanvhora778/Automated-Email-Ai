@@ -10,13 +10,12 @@ import {
   BarChart3, Users, Bell, Settings as SettingsIcon, Search, Wand2
 } from 'lucide-react';
 import { CopilotView } from './CopilotView';
+import Login from './Login';
 import { CommandPalette } from './components/command/CommandPalette';
 import { QuickActionFab } from './components/layout/QuickActionFab';
 const API_URL = "http://localhost:8000";
 function App() {
   const [user, setUser] = useState(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -25,7 +24,6 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pendingTool, setPendingTool] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const chatEndRef = useRef(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // Compose / Send-email modal state
@@ -33,7 +31,6 @@ function App() {
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
-  const [composeAttachResume, setComposeAttachResume] = useState(false);
   const [composeFile, setComposeFile] = useState(null);
   const [sending, setSending] = useState(false);
 
@@ -80,24 +77,16 @@ const checkOnboardingStatus = async (userId) => {
   console.log("Onboarding check shuru ho raha hai for:", userId);
   
   try {
-    // 1. Gmail Token check karo
+    // Gmail Token check karo
     const { data: profile } = await supabase
       .from('profiles')
       .select('gmail_token')
       .eq('id', userId)
       .maybeSingle();
 
-    // 2. Resume check karo (Sirf list mangao, count dekho)
-    const { data: resumes } = await supabase
-      .from('resumes')
-      .select('id')
-      .eq('user_id', userId);
-
     console.log("Profile data mila:", profile);
-    console.log("Resumes list mili:", resumes);
 
     // Sirf Gmail check karo - ek baar Gmail link ho gaya toh popup dobara mat dikhao
-    // (Resume ab optional hai, use main UI se kabhi bhi upload kar sakte hain)
     if (!profile?.gmail_token) {
       console.log("Popup trigger ho raha hai...");
       setTimeout(() => {
@@ -129,28 +118,6 @@ const checkOnboardingStatus = async (userId) => {
     setMessage('');
   };
 
-  const handleLogin = async () => {
-    if (!email || !password) return alert("Enter your Email and Password first!");
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert("Login Error: " + error.message);
-    else setUser(data.user);
-  };
-  
-  const handleSignup = async () => {
-    if (!email || !password) return alert("Email and password are required!");
-    try {
-      await axios.post(`${API_URL}/api/v1/auth/signup`, {
-        email,
-        password,
-        full_name: email.split('@')[0],
-      });
-      alert("Account created successfully! Now you can Sign In.");
-    } catch (error) {
-      const msg = error.response?.data?.detail || error.message;
-      alert("Signup Error: " + msg);
-    }
-  };
-
   const handleLogout = () => supabase.auth.signOut();
 
   // Open an AI writing tool from the command palette / FAB.
@@ -158,21 +125,6 @@ const checkOnboardingStatus = async (userId) => {
   const handleOpenTool = (action) => {
     setView((v) => (v === 'chat' ? 'dashboard' : v));
     setPendingTool(action);
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('user_id', user.id);
-
-    setUploading(true);
-    try {
-      await axios.post(`${API_URL}/api/v1/profile/upload-resume`, formData);
-      alert("✅ Resume Parsed Successfully!");
-    } catch (error) { alert("❌ Upload failed."); }
-    setUploading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -187,12 +139,11 @@ const checkOnboardingStatus = async (userId) => {
     setComposeSubject(subject || "Smart Email Agent Draft");
     setComposeBody(body || "");
     setComposeTo('');
-    setComposeAttachResume(false);
     setComposeFile(null);
     setShowCompose(true);
   };
 
-  // Actually send the email (supports resume + any user-picked file attachment)
+  // Actually send the email (supports an optional user-picked file attachment)
   const submitEmail = async () => {
     if (!composeTo) { alert("Please enter a recipient email."); return; }
     setSending(true);
@@ -203,7 +154,6 @@ const checkOnboardingStatus = async (userId) => {
       formData.append('to_email', composeTo);
       formData.append('subject', composeSubject || "Smart Email Agent Draft");
       formData.append('body', composeBody);
-      formData.append('attach_resume', composeAttachResume);
       if (composeFile) formData.append('file', composeFile);
 
       const res = await axios.post(`${API_URL}/api/v1/actions/send-email`, formData);
@@ -243,64 +193,7 @@ const checkOnboardingStatus = async (userId) => {
   };
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 text-white font-sans">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-[#111] p-10 rounded-[2.5rem] border border-white/5 shadow-2xl w-full max-w-md">
-          
-          {/* Logo & Header */}
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-black shadow-xl shadow-white/10">
-              <Zap size={32} fill="black" />
-            </div>
-          </div>
-          <h1 className="text-3xl font-bold text-center mb-2 tracking-tight">Smart Email Agent</h1>
-          <p className="text-center text-neutral-500 mb-8 text-sm font-medium">Your Smart Email Assistant</p>
-          
-          {/* Input Fields */}
-          <div className="space-y-4">
-            <input 
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl outline-none focus:bg-white/10 transition-all text-white placeholder:text-neutral-600" 
-              placeholder="Enter your email" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)} 
-            />
-            <input 
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl outline-none focus:bg-white/10 transition-all text-white placeholder:text-neutral-600" 
-              type="password" 
-              placeholder="Create a password (min. 6 chars)" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-            />
-            <button onClick={handleLogin} className="w-full bg-white text-black hover:bg-neutral-200 p-4 rounded-2xl font-bold transition-all shadow-lg active:scale-95">
-              Sign In
-            </button>
-            <button onClick={handleSignup} className="w-full text-neutral-400 p-4 rounded-2xl hover:text-white transition-all text-sm border border-white/5 hover:bg-white/5">
-              Create an account
-            </button>
-          </div>
-
-          {/* User Guidance Note (Naya Section) */}
-          <div className="mt-8 pt-6 border-t border-white/5">
-            <div className="flex items-start gap-3 bg-blue-500/7 p-4 rounded-2xl border border-blue-500/10">
-              <Sparkles size={18} className="text-blue-400 shrink-0 mt-0.5" />
-              <div className="text-[12px] leading-relaxed text-neutral-400">
-                <p className="text-blue-300 font-bold mb-1 uppercase tracking-wider">How to join:</p>
-                <ul className="list-disc ml-4 space-y-1">
-                  <li>Enter your <span className="text-white">Email and Password </span>First.</li>
-                  
-                  <li>Click <span className="text-white">Create an account</span>.</li>
-                   <li>Now try to <span className="text-white">Sign In</span>.</li>
-                </ul>
-              </div>
-            </div>
-            <p className="text-[10px] text-center text-neutral-600 mt-4 italic">
-              Verification ensures your Gmail tokens and Resumes are securely stored.
-            </p>
-          </div>
-          
-        </motion.div>
-      </div>
-    );
+    return <Login />;
   }
 
   return (
@@ -389,10 +282,6 @@ const checkOnboardingStatus = async (userId) => {
            <button onClick={() => setView('settings')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'settings' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><SettingsIcon size={18} /> Settings</button>
            <button onClick={() => setView('profile')} className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-all ${view === 'profile' ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}><User size={18} /> Profile</button>
            <button onClick={handleGoogleLogin} className="flex items-center gap-3 w-full p-3 hover:bg-white/5 rounded-2xl text-sm transition-all"><Mail size={18} /> Link Gmail Account</button>
-           <label className="flex items-center gap-3 w-full p-3 hover:bg-white/5 rounded-2xl text-sm cursor-pointer">
-              <FileUp size={18} /> {uploading ? "Parsing..." : "Upload Resume"}
-              <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf" />
-           </label>
            <button onClick={handleLogout} className="flex items-center gap-3 w-full p-3 hover:bg-red-500/10 rounded-2xl text-sm text-red-400 mt-4"><LogOut size={18}/> Logout</button>
         </div>
       </aside>
@@ -484,25 +373,19 @@ const checkOnboardingStatus = async (userId) => {
         </div>
         <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Complete Your Setup</h2>
         <p className="text-neutral-400 text-sm mb-8 leading-relaxed">
-          To unlock the full potential of your Smart Email Agent, please link your Gmail and upload your resume.
+          To unlock the full potential of your Smart Email Agent, please link your Gmail account.
         </p>
 
         <div className="space-y-3">
           {/* Link Gmail Action */}
-          <button 
+          <button
             onClick={() => { handleGoogleLogin(); setShowOnboarding(false); }}
             className="w-full flex items-center justify-center gap-3 bg-white text-black p-4 rounded-2xl font-bold hover:bg-neutral-200 transition-all"
           >
             <Mail size={18} /> Link Gmail Account
           </button>
 
-          {/* Resume Upload Action (Input trigger) */}
-          <label className="w-full flex items-center justify-center gap-3 border border-white/10 text-white p-4 rounded-2xl font-bold hover:bg-white/5 transition-all cursor-pointer">
-            <FileUp size={18} /> Upload Your Resume
-            <input type="file" className="hidden" onChange={(e) => { handleFileUpload(e); setShowOnboarding(false); }} accept=".pdf" />
-          </label>
-
-          <button 
+          <button
             onClick={() => setShowOnboarding(false)}
             className="w-full text-neutral-600 text-xs font-medium uppercase tracking-widest pt-4 hover:text-neutral-400 transition-colors"
           >
@@ -543,12 +426,6 @@ const checkOnboardingStatus = async (userId) => {
                 value={composeBody}
                 onChange={e => setComposeBody(e.target.value)}
               />
-
-              {/* Resume attachment toggle */}
-              <label className="flex items-center gap-3 text-sm text-neutral-300 cursor-pointer select-none">
-                <input type="checkbox" checked={composeAttachResume} onChange={e => setComposeAttachResume(e.target.checked)} />
-                Attach my resume (PDF)
-              </label>
 
               {/* Any-file attachment */}
               <label className="flex items-center gap-3 w-full p-3 bg-white/5 border border-white/10 rounded-2xl text-sm cursor-pointer hover:bg-white/10 text-neutral-300 truncate">
