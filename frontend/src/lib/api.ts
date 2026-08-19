@@ -23,10 +23,23 @@ import type {
  * keeps a fresh clone working with no .env file.
  *
  * Trailing slashes are trimmed because axios would otherwise build "//api/v1".
+ *
+ * A production bundle pointing at localhost is always a build-time mistake:
+ * VITE_ values are frozen into the bundle, so nothing can correct it at
+ * runtime and every call fails against a machine that isn't there. Say so in
+ * the console rather than letting it look like a network fault.
  */
-export const API_URL = (
-  import.meta.env.VITE_API_URL ?? "http://localhost:8000"
-).replace(/\/+$/, "");
+const RAW_API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
+export const API_URL = RAW_API_URL.replace(/\/+$/, "");
+
+if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_URL)) {
+  console.error(
+    `[config] This build targets ${API_URL}, which will not exist for your users. ` +
+      "Set VITE_API_URL to the backend's public URL in your hosting environment " +
+      "and redeploy — rebuilding is required, since the value is inlined at build time."
+  );
+}
 
 export const apiClient = axios.create({ baseURL: API_URL });
 
