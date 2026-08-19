@@ -46,14 +46,20 @@ function tokenCapabilities(scope?: string) {
 export function Settings({
   userId,
   userEmail,
+  provider,
   onLinkGmail,
   onLogout,
 }: {
   userId: string;
   userEmail?: string;
+  /** Supabase auth provider — "google" accounts have no password to change. */
+  provider?: string;
   onLinkGmail?: () => void;
   onLogout?: () => void;
 }) {
+  // Google accounts authenticate through Google; there is no local password,
+  // so the reset panel would be a dead end for them.
+  const isPasswordAccount = (provider ?? "email") !== "google";
   const queryClient = useQueryClient();
 
   // --- Real Gmail link status (reads the user's own profile row via RLS) ---
@@ -96,7 +102,7 @@ export function Settings({
     toast.success("Gmail unlinked. Link it again anytime.");
   };
 
-  // --- Real password reset for the account email (Supabase auth) ---
+  // --- Password reset (email/password accounts only) ---
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -135,17 +141,17 @@ export function Settings({
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
           <SettingsIcon size={24} className="text-brand-400" /> Settings
         </h1>
-        <p className="mt-2 text-sm text-neutral-500">Your account, Gmail connection and password — all live, no placeholders.</p>
+        <p className="mt-2 text-sm text-neutral-500">Your account, Gmail connection and security — all live, no placeholders.</p>
       </motion.div>
 
       {/* ---------- Account ---------- */}
       <section className="space-y-3">
-        <SectionTitle icon={<User size={17} className="text-brand-400" />} title="Account" desc="The email you signed up with." />
+        <SectionTitle icon={<User size={17} className="text-brand-400" />} title="Account" desc="The account you signed in with." />
         <GlassCard className="space-y-3 p-5">
           <Row
             icon={<Mail size={18} />}
             title={userEmail ?? "Unknown"}
-            desc="Signed in with email and password."
+            desc={isPasswordAccount ? "Signed in with email and password." : "Signed in with Google."}
             action={<Badge tone="success"><Check size={11} /> Signed in</Badge>}
           />
           <Row
@@ -225,50 +231,52 @@ export function Settings({
         </GlassCard>
       </section>
 
-      {/* ---------- Reset password ---------- */}
-      <section className="space-y-3">
-        <SectionTitle icon={<ShieldCheck size={17} className="text-emerald-400" />} title="Reset password" desc={`Changes the sign-in password for ${userEmail ?? "your account"}.`} />
-        <GlassCard className="space-y-4 p-5">
-          <div className="relative">
+      {/* ---------- Reset password (email/password accounts only) ---------- */}
+      {isPasswordAccount && (
+        <section className="space-y-3">
+          <SectionTitle icon={<ShieldCheck size={17} className="text-emerald-400" />} title="Reset password" desc={`Changes the sign-in password for ${userEmail ?? "your account"}.`} />
+          <GlassCard className="space-y-4 p-5">
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="New password (min. 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className={inputClass}
+                autoComplete="new-password"
+              />
+              <button
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             <input
               type={showPassword ? "text" : "password"}
-              placeholder="New password (min. 6 characters)"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Confirm new password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleResetPassword()}
               className={inputClass}
               autoComplete="new-password"
             />
-            <button
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
-              title={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          <input
-            type={showPassword ? "text" : "password"}
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleResetPassword()}
-            className={inputClass}
-            autoComplete="new-password"
-          />
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] text-neutral-600">
-              Takes effect immediately — you stay signed in on this device.
-            </p>
-            <Button
-              variant="primary"
-              onClick={handleResetPassword}
-              disabled={savingPassword || !newPassword || !confirmPassword}
-            >
-              <KeyRound size={15} /> {savingPassword ? "Updating…" : "Update password"}
-            </Button>
-          </div>
-        </GlassCard>
-      </section>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] text-neutral-600">
+                Takes effect immediately — you stay signed in on this device.
+              </p>
+              <Button
+                variant="primary"
+                onClick={handleResetPassword}
+                disabled={savingPassword || !newPassword || !confirmPassword}
+              >
+                <KeyRound size={15} /> {savingPassword ? "Updating…" : "Update password"}
+              </Button>
+            </div>
+          </GlassCard>
+        </section>
+      )}
     </div>
   );
 }
