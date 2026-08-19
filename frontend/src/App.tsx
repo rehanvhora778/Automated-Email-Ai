@@ -17,9 +17,9 @@ import { QuickActionFab } from './components/layout/QuickActionFab';
 import type { LucideIcon } from 'lucide-react';
 import type { CopilotViewName } from './CopilotView';
 import type { ToolAction } from './lib/types';
+import { API_URL } from './lib/api';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
-const API_URL = "http://localhost:8000";
 
 /** Every screen App can show: the Copilot views plus the local chat workspace. */
 type AppView = CopilotViewName | 'chat';

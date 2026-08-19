@@ -384,6 +384,25 @@ hour on the free tier.
 
 ---
 
+## 🚢 Deployment
+
+Live deployment runs the backend on **Render** and the frontend on **Vercel**, with
+Supabase unchanged. See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the full walkthrough.
+
+Both halves read their configuration from the environment, so no code changes are needed
+between local and production:
+
+| Variable | Side | Purpose |
+|---|---|---|
+| `VITE_API_URL` | frontend | Backend base URL (falls back to `http://localhost:8000`) |
+| `ALLOWED_ORIGINS` | backend | Comma-separated CORS allowlist (falls back to the Vite dev servers) |
+| `OAUTH_REDIRECT_URI` | backend | Gmail OAuth callback, must match the Google client exactly |
+| `GOOGLE_CREDENTIALS_JSON` | backend | Contents of `credentials.json`, since that file is gitignored |
+
+`render.yaml` describes the backend service as a Render blueprint.
+
+---
+
 ## ⚙️ Environment Variables
 
 | Variable | Where | Purpose |

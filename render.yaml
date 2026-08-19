@@ -1,0 +1,29 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+#
+# Either point Render at this file (New -> Blueprint) or configure the same
+# settings by hand in the dashboard. Secrets are marked sync:false so Render
+# prompts for them instead of expecting them in the repo.
+services:
+  - type: web
+    name: smart-email-agent-api
+    runtime: python
+    plan: free
+    rootDir: backend           # the repo root is still cloned, so ../ml is available
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY          # service_role key
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON   # contents of backend/credentials.json, one line
+        sync: false
+      - key: OAUTH_REDIRECT_URI        # https://<this-service>.onrender.com/api/v1/actions/callback
+        sync: false
+      - key: ALLOWED_ORIGINS           # https://<your-app>.vercel.app
+        sync: false

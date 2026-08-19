@@ -25,7 +25,12 @@ SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',    # Inbox actions: archive/trash/label/star/read
 ]
 # Purani 2-3 lines hata kar ye naya block paste karo
-REDIRECT_URI = "http://localhost:8000/api/v1/actions/callback"
+# Must exactly match an Authorized redirect URI on the Google OAuth client.
+# In production set OAUTH_REDIRECT_URI to the Render URL, e.g.
+#   https://your-service.onrender.com/api/v1/actions/callback
+REDIRECT_URI = os.getenv(
+    "OAUTH_REDIRECT_URI", "http://localhost:8000/api/v1/actions/callback"
+)
 
 google_creds_raw = os.getenv("GOOGLE_CREDENTIALS_JSON")
 

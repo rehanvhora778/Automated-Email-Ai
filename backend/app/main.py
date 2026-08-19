@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
@@ -8,9 +10,29 @@ app = FastAPI(title="Smart Email Agent")
 
 # --- CORS SETTINGS ---
 # Iske bina React backend se baat nahi kar payega
+# Browsers reject the combination of allow_credentials=True with a "*" origin,
+# and it would let any site call this API on a signed-in user's behalf. In
+# production set ALLOWED_ORIGINS to the deployed frontend, comma-separated:
+#   ALLOWED_ORIGINS=https://your-app.vercel.app,https://www.yourdomain.com
+# Unset, it falls back to the local Vite dev servers.
+_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",  # vite preview
+]
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = (
+    [o.strip().rstrip("/") for o in _origins_env.split(",") if o.strip()]
+    if _origins_env
+    else _DEV_ORIGINS
+)
+print(f"CORS allowed origins: {ALLOWED_ORIGINS}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Production mein ise React ke URL se badal denge
+    allow_origins=ALLOWED_ORIGINS,
+    # Vercel gives every deployment a unique preview URL, so allow those too.
+    allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

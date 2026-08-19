@@ -15,8 +15,18 @@ import type {
   ClassifyHealthResponse,
 } from "./types";
 
-// Keep in sync with the base URL used by the existing App.jsx.
-export const API_URL = "http://localhost:8000";
+/**
+ * Backend base URL.
+ *
+ * Set VITE_API_URL in the deployment environment (Vercel -> Settings ->
+ * Environment Variables) to the Render service URL. The localhost fallback
+ * keeps a fresh clone working with no .env file.
+ *
+ * Trailing slashes are trimmed because axios would otherwise build "//api/v1".
+ */
+export const API_URL = (
+  import.meta.env.VITE_API_URL ?? "http://localhost:8000"
+).replace(/\/+$/, "");
 
 export const apiClient = axios.create({ baseURL: API_URL });
 
