@@ -1,0 +1,104 @@
+{
+  "selected_model": "LinearSVC",
+  "cv_f1": {
+    "MultinomialNB": {
+      "mean": 0.971291794684095,
+      "std": 0.007705419609489355
+    },
+    "LogisticRegression": {
+      "mean": 0.9763250514458578,
+      "std": 0.0053160014717802215
+    },
+    "LinearSVC": {
+      "mean": 0.9816800872379006,
+      "std": 0.0028055810029269574
+    }
+  },
+  "test_metrics": {
+    "accuracy": 0.9889624724061811,
+    "precision": 0.9782608695652174,
+    "recall": 0.994475138121547,
+    "f1": 0.9863013698630136,
+    "roc_auc": 0.998750812479688
+  },
+  "confusion_matrix": {
+    "true_ham": 536,
+    "false_spam": 8,
+    "missed_spam": 2,
+    "true_spam": 360
+  },
+  "per_source_accuracy": {
+    "easy_ham": {
+      "n": 487,
+      "accuracy": 0.997946611909651
+    },
+    "hard_ham": {
+      "n": 57,
+      "accuracy": 0.8771929824561403
+    },
+    "spam": {
+      "n": 96,
+      "accuracy": 1.0
+    },
+    "spam_2": {
+      "n": 266,
+      "accuracy": 0.9924812030075187
+    }
+  },
+  "inference_ms_per_email": 0.25598949985578656,
+  "train_seconds": 2.538588299998082,
+  "dataset": {
+    "name": "SpamAssassin public corpus",
+    "total": 4528,
+    "ham": 2720,
+    "spam": 1808,
+    "train": 3622,
+    "test": 906
+  },
+  "top_features": {
+    "spam": [
+      "your",
+      "nbsp",
+      "our",
+      "click here",
+      "free",
+      "please",
+      "spamassassin sightings",
+      "you",
+      "sightings",
+      "remove",
+      "click",
+      "heaven",
+      "here",
+      "will",
+      "you will",
+      "we",
+      "here to",
+      "money",
+      "credit",
+      "business"
+    ],
+    "ham": [
+      "re",
+      "2002",
+      "the",
+      "wrote",
+      "url http",
+      "but",
+      "it",
+      "that",
+      "date",
+      "url",
+      "they",
+      "org",
+      "spambayes",
+      "said",
+      "spamassassin talk",
+      "razor",
+      "rpm",
+      "of",
+      "users",
+      "not"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+# Training + analysis only. The backend does NOT need these at runtime --
+# see backend/requirements.txt for the inference dependencies.
+-r ../backend/requirements.txt
+
+pandas==3.0.5
+matplotlib==3.11.1
+
+# to run ml/notebooks/spam_classifier.ipynb
+jupyter
+nbconvert

@@ -3,10 +3,15 @@ uvicorn
 mistralai==1.1.0
 supabase
 python-dotenv
-pypdf
-pdfplumber
 reportlab
 google-auth-oauthlib
 google-api-python-client
 requests
 python-multipart
+
+# --- ML inference (loads ml/models/spam_clf.joblib) ---
+# scikit-learn is pinned: joblib unpickling warns and can break across
+# sklearn minor versions, so this must match what ml/train.py was run with.
+scikit-learn==1.9.0
+joblib==1.5.3
+numpy==2.4.6

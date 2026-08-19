@@ -1,0 +1,96 @@
+{
+  "selected_representation": "tfidf_only",
+  "representation_cv_f1": {
+    "tfidf_only": {
+      "mean": 0.98003169335771,
+      "std": 0.0051153287348439285
+    },
+    "engineered_only": {
+      "mean": 0.8300693664803394,
+      "std": 0.019968974688813992
+    },
+    "tfidf_plus_engineered": {
+      "mean": 0.9755930741186256,
+      "std": 0.00650775083772095
+    }
+  },
+  "engineered_feature_lift_f1": -0.004438619239084396,
+  "classifier": "CalibratedClassifierCV(LinearSVC)",
+  "test_metrics": {
+    "accuracy": 0.9948947032546267,
+    "precision": 0.9973262032085561,
+    "recall": 0.9815789473684211,
+    "f1": 0.9893899204244032,
+    "roc_auc": 0.9991830355163394
+  },
+  "confusion_matrix": {
+    "true_negative": 1186,
+    "false_alarm": 1,
+    "missed_phishing": 7,
+    "caught_phishing": 373
+  },
+  "per_source": {
+    "ham": {
+      "n": 457,
+      "accuracy": 1.0,
+      "false_alarm_rate": 0.0
+    },
+    "hard_ham": {
+      "n": 50,
+      "accuracy": 1.0,
+      "false_alarm_rate": 0.0
+    },
+    "legit_security": {
+      "n": 298,
+      "accuracy": 1.0,
+      "false_alarm_rate": 0.0
+    },
+    "phishing": {
+      "n": 380,
+      "accuracy": 0.9815789473684211,
+      "recall": 0.9815789473684211
+    },
+    "spam": {
+      "n": 382,
+      "accuracy": 0.9973821989528796,
+      "false_alarm_rate": 0.002617801047120419
+    }
+  },
+  "engineered_feature_coefficients": {
+    "n_urls": -0.0256348158869831,
+    "n_unique_domains": -0.1651431211333709,
+    "has_ip_url": 0.024505311262690496,
+    "has_shortener": -0.022925028101818845,
+    "has_suspicious_tld": 0.007621610191672991,
+    "has_at_in_url": -0.11423503158915795,
+    "has_hex_host": 0.017887114836900374,
+    "max_url_len": 0.1730681041070283,
+    "n_urgency": 0.005995637575153445,
+    "n_credential": 0.10440208819391388,
+    "n_threat": 0.17864005251042972,
+    "n_action": -0.03784295416389733,
+    "has_generic_greeting": 0.03920714875786136,
+    "n_brands": 0.13192860338460224,
+    "brand_domain_mismatch": -0.05054938879890642,
+    "n_exclamations": -0.03667387625153363,
+    "caps_ratio": 0.024037783896754,
+    "n_digits_ratio": 0.0050073101030085184,
+    "has_password_input": 0.0,
+    "has_form": -0.01287243880015331,
+    "log_len": -0.09014854591126797,
+    "n_reassurance": -0.2312533290889531,
+    "has_safe_route": -0.06293440397057211,
+    "has_no_action_needed": -0.1586180874575143
+  },
+  "inference_ms_per_email": 0.2592620000359602,
+  "train_seconds": 3.984199600003194,
+  "dataset": {
+    "phishing_source": "Nazario phishing corpus",
+    "negative_source": "SpamAssassin (ham + hard_ham + spam)",
+    "total": 7833,
+    "phishing": 1901,
+    "not_phishing": 5932,
+    "train": 6266,
+    "test": 1567
+  }
+}

@@ -6,3 +6,9 @@ __pycache__/
 node_modules/
 dist/
 .venv/
+
+# ML: raw corpus + derived CSV are large and reproducible from prepare_data.py
+ml/data/raw/
+ml/data/emails.csv
+ml/data/phishing.csv
+ml/data/hard_negatives.csv
