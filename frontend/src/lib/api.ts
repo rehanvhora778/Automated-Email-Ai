@@ -11,6 +11,8 @@ import type {
   AgentEvent,
   ToolPayload,
   ToolResponse,
+  MlVerdict,
+  ClassifyHealthResponse,
 } from "./types";
 
 // Keep in sync with the base URL used by the existing App.jsx.
@@ -157,7 +159,47 @@ export async function streamAgent(
   }
 }
 
-/** Generic AI writing tool (cover letter, cold email, translate, improve, rewrite). */
+/**
+ * Score an email with a locally trained classifier — no LLM, no token cost.
+ *
+ * Returns null instead of throwing when the model has not been trained yet
+ * (503) or the text is too short to score honestly (400), so callers can treat
+ * the ML verdict as a progressive enhancement over the LLM explanation.
+ */
+export async function classifyEmail(
+  kind: "spam" | "phishing",
+  text: string,
+  signal?: AbortSignal
+): Promise<MlVerdict | null> {
+  try {
+    const { data } = await apiClient.post(
+      `/api/v1/ai/classify/${kind}`,
+      { text },
+      { signal }
+    );
+    return data as MlVerdict;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Status and stored evaluation metrics for both trained classifiers.
+ *
+ * Returns null rather than throwing when the backend is unreachable, so the
+ * AI Tools page can render its cards without the metric badges instead of
+ * failing outright.
+ */
+export async function classifyHealth(): Promise<ClassifyHealthResponse | null> {
+  try {
+    const { data } = await apiClient.get("/api/v1/ai/classify/health");
+    return data as ClassifyHealthResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** Generic AI writing tool (translate, improve, rewrite, summarize, …). */
 export async function runTool(payload: ToolPayload): Promise<ToolResponse> {
   const { data } = await apiClient.post("/api/v1/ai/tool", payload);
   return data as ToolResponse;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 import axios from 'axios';
+import { toast } from 'sonner';
 import { supabase } from './supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,29 +11,96 @@ import {
   BarChart3, Users, Bell, Settings as SettingsIcon, Search, Wand2
 } from 'lucide-react';
 import { CopilotView } from './CopilotView';
-import Login from './Login';
+import AuthScreen from './AuthScreen';
 import { CommandPalette } from './components/command/CommandPalette';
 import { QuickActionFab } from './components/layout/QuickActionFab';
+import type { LucideIcon } from 'lucide-react';
+import type { CopilotViewName } from './CopilotView';
+import type { ToolAction } from './lib/types';
+import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
+
 const API_URL = "http://localhost:8000";
+
+/** Every screen App can show: the Copilot views plus the local chat workspace. */
+type AppView = CopilotViewName | 'chat';
+
+/** One entry in the sidebar navigation. */
+interface NavItem {
+  key: AppView;
+  label: string;
+  icon: LucideIcon;
+}
+
+/** One rendered bubble in the chat workspace. */
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  status?: string;
+  metadata?: { subject?: string; type?: string } | null;
+}
+
+/** A conversation thread in the history sidebar. */
+interface ConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [message, setMessage] = useState('');
-  const [chat, setChat] = useState([]);
-  const [conversations, setConversations] = useState([]);
-  const [activeConversationId, setActiveConversationId] = useState(null);
-  const [view, setView] = useState('dashboard'); // dashboard | chat | smartReply | inbox | analytics | contacts | notifications | settings | profile
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [view, setView] = useState<AppView>('dashboard'); // dashboard | chat | smartReply | inbox | analytics | contacts | notifications | settings | profile
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [pendingTool, setPendingTool] = useState(null);
+  const [pendingTool, setPendingTool] = useState<ToolAction | null>(null);
   const [loading, setLoading] = useState(false);
-  const chatEndRef = useRef(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // Compose / Send-email modal state
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
-  const [composeFile, setComposeFile] = useState(null);
+  const [composeFile, setComposeFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
+
+  /** CopilotView emits plain strings; every value it sends is a real view name. */
+  const navigate = (next: string) => setView(next as AppView);
+
+  /**
+   * Persist the Google tokens that arrive with a fresh sign-in.
+   *
+   * Supabase exposes `provider_token` / `provider_refresh_token` on the session
+   * only on the redirect back from Google — they are gone after the next page
+   * load. Posting them to the backend is what makes signing in also link Gmail,
+   * so the user never sees a second consent screen.
+   *
+   * Failure here is not fatal: the user is signed in either way, and the
+   * Settings screen still offers the manual "Link Gmail" flow.
+   */
+  const captureGoogleTokens = async (session: Session) => {
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/api/v1/auth/google/link`,
+        {
+          provider_token: session.provider_token,
+          provider_refresh_token: session.provider_refresh_token ?? null,
+          expires_in: session.expires_in ?? null,
+        },
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
+      );
+      if (!data?.linked) {
+        toast.warning(
+          'Signed in, but Google did not return a refresh token. Re-link Gmail from Settings if mail features stop working.'
+        );
+      }
+    } catch (e) {
+      console.error('Gmail link failed', e);
+      toast.error('Signed in, but linking Gmail failed. You can retry from Settings.');
+    }
+  };
 
   // 1. Auth & Initial Data Load
   useEffect(() => {
@@ -43,6 +111,10 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) fetchConversations(session.user.id);
+      // Google's tokens ride along on the session for exactly one moment after
+      // sign-in and are never persisted by Supabase, so hand them to the
+      // backend right now or lose Gmail access.
+      if (session?.provider_token) captureGoogleTokens(session);
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -52,7 +124,7 @@ function App() {
   }, [chat]);
 
   // --- OPEN A SPECIFIC CONVERSATION (load its messages into the chat window) ---
-  const openConversation = async (conversationId) => {
+  const openConversation = async (conversationId: string) => {
     setView('chat');
     setActiveConversationId(conversationId);
     try {
@@ -62,7 +134,10 @@ function App() {
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
 
-      setChat((data || []).map(m => ({ role: m.role, text: m.content })));
+      setChat((data || []).map((m: { role: string; content: string }) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        text: m.content ?? '',
+      })));
     } catch (e) { console.log(e); }
   };
   
@@ -73,7 +148,7 @@ useEffect(() => {
   }
 }, [user]);
 
-const checkOnboardingStatus = async (userId) => {
+const checkOnboardingStatus = async (userId: string) => {
   console.log("Onboarding check shuru ho raha hai for:", userId);
   
   try {
@@ -98,7 +173,7 @@ const checkOnboardingStatus = async (userId) => {
   }
 };
   // --- FETCH CONVERSATION LIST (SIDEBAR) ---
-  const fetchConversations = async (userId) => {
+  const fetchConversations = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('conversations')
@@ -122,12 +197,13 @@ const checkOnboardingStatus = async (userId) => {
 
   // Open an AI writing tool from the command palette / FAB.
   // CopilotView hosts the tool modal, so ensure a non-chat view is active first.
-  const handleOpenTool = (action) => {
+  const handleOpenTool = (action: ToolAction) => {
     setView((v) => (v === 'chat' ? 'dashboard' : v));
     setPendingTool(action);
   };
 
   const handleGoogleLogin = async () => {
+    if (!user) return;
     try {
       const res = await axios.get(`${API_URL}/api/v1/actions/login-google?user_id=${user.id}`);
       window.open(res.data.url, '_blank');
@@ -135,7 +211,7 @@ const checkOnboardingStatus = async (userId) => {
   };
 
   // Open the compose modal, prefilled with the AI draft
-  const handleSendEmail = (subject, body) => {
+  const handleSendEmail = (subject: string, body: string) => {
     setComposeSubject(subject || "Smart Email Agent Draft");
     setComposeBody(body || "");
     setComposeTo('');
@@ -150,7 +226,7 @@ const checkOnboardingStatus = async (userId) => {
     try {
       // multipart/form-data so we can include an arbitrary file attachment
       const formData = new FormData();
-      formData.append('user_id', user.id);
+      formData.append('user_id', user!.id);
       formData.append('to_email', composeTo);
       formData.append('subject', composeSubject || "Smart Email Agent Draft");
       formData.append('body', composeBody);
@@ -163,7 +239,9 @@ const checkOnboardingStatus = async (userId) => {
       }
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.detail || "Error sending email.";
+      const msg = axios.isAxiosError(err)
+        ? err.response?.data?.detail ?? "Error sending email."
+        : "Error sending email.";
       alert("❌ " + msg);
     }
     setSending(false);
@@ -177,7 +255,7 @@ const checkOnboardingStatus = async (userId) => {
     setChat(prev => [...prev, { role: 'user', text: currentMessage }]);
     try {
       const response = await axios.post(`${API_URL}/api/v1/chat/`, {
-        user_id: user.id,
+        user_id: user!.id,
         message: currentMessage,
         conversation_id: activeConversationId,
       });
@@ -187,13 +265,13 @@ const checkOnboardingStatus = async (userId) => {
       }]);
       // Keep the thread active (a new conversation returns its fresh id)
       if (response.data?.conversation_id) setActiveConversationId(response.data.conversation_id);
-      fetchConversations(user.id);
+      fetchConversations(user!.id);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
 
   if (!user) {
-    return <Login />;
+    return <AuthScreen />;
   }
 
   return (
@@ -211,13 +289,13 @@ const checkOnboardingStatus = async (userId) => {
 
         {/* Primary navigation */}
         <nav className="space-y-1 mb-4">
-          {[
+          {([
             { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { key: 'chat', label: 'AI Workspace', icon: Bot },
             { key: 'agent', label: 'AI Agent', icon: Wand2 },
             { key: 'smartReply', label: 'Smart Reply', icon: Reply },
             { key: 'inbox', label: 'Inbox Summary', icon: Inbox },
-          ].map((item) => {
+          ] as NavItem[]).map((item) => {
             const Icon = item.icon;
             const active = view === item.key;
             return (
@@ -235,12 +313,12 @@ const checkOnboardingStatus = async (userId) => {
         {/* Workspace navigation (new pages) */}
         <p className="text-[11px] font-bold text-neutral-600 uppercase tracking-widest px-2 mb-2">Workspace</p>
         <nav className="space-y-1 mb-6">
-          {[
+          {([
             { key: 'tools', label: 'AI Tools', icon: Sparkles },
             { key: 'analytics', label: 'Analytics', icon: BarChart3 },
             { key: 'contacts', label: 'Contacts', icon: Users },
             { key: 'notifications', label: 'Notifications', icon: Bell },
-          ].map((item) => {
+          ] as NavItem[]).map((item) => {
             const Icon = item.icon;
             const active = view === item.key;
             return (
@@ -313,7 +391,7 @@ const checkOnboardingStatus = async (userId) => {
                   <div className="flex-1">
                     <p className="text-neutral-200 leading-relaxed text-[15px] font-medium whitespace-pre-wrap">{msg.text}</p>
                     {msg.status === 'ready' && (
-                       <button onClick={() => handleSendEmail(msg.metadata?.subject, msg.text)} className="mt-6 flex items-center gap-2 bg-white hover:bg-neutral-200 text-black px-6 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xl active:scale-95">
+                       <button onClick={() => handleSendEmail(msg.metadata?.subject ?? '', msg.text)} className="mt-6 flex items-center gap-2 bg-white hover:bg-neutral-200 text-black px-6 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xl active:scale-95">
                          <Send size={14} /> Send via Gmail
                        </button>
                     )}
@@ -348,8 +426,8 @@ const checkOnboardingStatus = async (userId) => {
         ) : (
           <CopilotView
             view={view}
-            user={{ id: user.id, email: user.email }}
-            onNavigate={setView}
+            user={{ id: user.id, email: user.email, provider: user.app_metadata?.provider }}
+            onNavigate={navigate}
             onCompose={() => handleSendEmail('', '')}
             onSendDraft={handleSendEmail}
             onLinkGmail={handleGoogleLogin}
@@ -431,7 +509,7 @@ const checkOnboardingStatus = async (userId) => {
               <label className="flex items-center gap-3 w-full p-3 bg-white/5 border border-white/10 rounded-2xl text-sm cursor-pointer hover:bg-white/10 text-neutral-300 truncate">
                 <FileUp size={18} className="shrink-0" />
                 <span className="truncate">{composeFile ? composeFile.name : "Attach a file"}</span>
-                <input type="file" className="hidden" onChange={e => setComposeFile(e.target.files[0] || null)} />
+                <input type="file" className="hidden" onChange={e => setComposeFile(e.target.files?.[0] ?? null)} />
               </label>
               {composeFile && (
                 <button onClick={() => setComposeFile(null)} className="text-xs text-red-400 hover:text-red-300">Remove attachment</button>
@@ -454,7 +532,7 @@ const checkOnboardingStatus = async (userId) => {
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
-        onNavigate={setView}
+        onNavigate={navigate}
         onCompose={() => handleSendEmail('', '')}
         onOpenTool={handleOpenTool}
         onLinkGmail={handleGoogleLogin}
@@ -463,7 +541,7 @@ const checkOnboardingStatus = async (userId) => {
       {view !== 'chat' && (
         <QuickActionFab
           onCompose={() => handleSendEmail('', '')}
-          onNavigate={setView}
+          onNavigate={navigate}
           onOpenTool={handleOpenTool}
           onOpenPalette={() => setPaletteOpen(true)}
         />

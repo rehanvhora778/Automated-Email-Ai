@@ -60,8 +60,6 @@ export interface InboxSummaryResponse {
 }
 
 export type ToolAction =
-  | "cover_letter"
-  | "cold_email"
   | "translate"
   | "improve"
   | "rewrite"
@@ -70,14 +68,9 @@ export type ToolAction =
   | "summarize"
   | "tone_detection"
   | "spam_detection"
-  | "phishing_detection"
-  | "subject_generator"
-  | "follow_up"
-  | "linkedin_outreach"
-  | "interview_email";
+  | "phishing_detection";
 
 export interface ToolPayload {
-  user_id?: string | null;
   action: ToolAction;
   input: string;
   context?: string;
@@ -86,6 +79,55 @@ export interface ToolPayload {
 export interface ToolResponse {
   content: string;
   error?: string;
+  /** Present only for actions backed by a locally trained model. */
+  ml?: MlVerdict;
+}
+
+// ---- Local ML classifiers (trained models, not LLM prompts) ----
+
+/**
+ * A verdict from a locally trained scikit-learn model. These run in about a
+ * millisecond with no network call, so the UI can show a result immediately
+ * while the LLM explanation is still streaming in behind it.
+ *
+ * See ml/README.md for how the models were trained and evaluated.
+ */
+export interface MlVerdict {
+  available: boolean;
+  /** Spam model: "Spam" | "Suspicious" | "Not spam".
+   *  Phishing model: "Phishing" | "Suspicious" | "Safe". */
+  verdict: string;
+  is_spam?: boolean;
+  is_phishing?: boolean;
+  /** Confidence in the predicted class, 0-100. */
+  confidence: number;
+  spam_probability?: number;
+  phishing_probability?: number;
+  /** Terms in this email that drove the score, strongest first. */
+  signals: string[];
+  latency_ms: number;
+  model: string;
+}
+
+/** Evaluation metrics recorded when a model was trained. */
+export interface MlModelHealth {
+  available: boolean;
+  model_path: string;
+  selected?: string;
+  test_metrics?: {
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1: number;
+    roc_auc: number;
+  };
+  dataset?: Record<string, string | number>;
+}
+
+/** GET /api/v1/ai/classify/health — status of both trained classifiers. */
+export interface ClassifyHealthResponse {
+  spam: MlModelHealth;
+  phishing: MlModelHealth;
 }
 
 // ---- Inbox tabs + Gmail actions ----

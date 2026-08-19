@@ -29,6 +29,8 @@ export type CopilotViewName =
 export interface CopilotUser {
   id: string;
   email?: string;
+  /** Supabase auth provider: "email" for password accounts, "google" for OAuth. */
+  provider?: string;
 }
 
 /**
@@ -109,7 +111,7 @@ export function CopilotView({
             <Notifications userId={user.id} onLinkGmail={onLinkGmail} />
           )}
           {view === "settings" && (
-            <Settings userId={user.id} userEmail={user.email} onLinkGmail={onLinkGmail} onLogout={onLogout} />
+            <Settings userId={user.id} userEmail={user.email} provider={user.provider} onLinkGmail={onLinkGmail} onLogout={onLogout} />
           )}
           {view === "profile" && (
             <Profile userEmail={user.email} userId={user.id} onLinkGmail={onLinkGmail} />
@@ -120,7 +122,6 @@ export function CopilotView({
       <AIToolModal
         open={toolOpen}
         action={toolAction}
-        userId={user.id}
         onClose={() => setToolOpen(false)}
         onSendDraft={onSendDraft}
       />

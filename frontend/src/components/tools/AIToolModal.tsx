@@ -2,15 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, Send, Wand2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { streamTool } from "../../lib/api";
-import type { ToolAction } from "../../lib/types";
+import { classifyEmail, streamTool } from "../../lib/api";
+import type { MlVerdict, ToolAction } from "../../lib/types";
 import { Button } from "../ui/Button";
 import { Markdown } from "../ui/Markdown";
 import { ErrorState } from "../ui/ErrorState";
+import { MlVerdictCard } from "./MlVerdictCard";
+
+/** Tools that also have a locally trained model behind them. */
+const ML_KIND: Partial<Record<ToolAction, "spam" | "phishing">> = {
+  spam_detection: "spam",
+  phishing_detection: "phishing",
+};
 
 const meta: Record<ToolAction, { title: string; placeholder: string; contextLabel?: string; contextPlaceholder?: string }> = {
-  cover_letter: { title: "Cover Letter", placeholder: "Paste the job description or describe the role you're applying for…", contextLabel: "Company / role", contextPlaceholder: "e.g. Frontend Engineer at Acme" },
-  cold_email: { title: "Cold Email", placeholder: "Who are you reaching out to, and what's the ask?", contextLabel: "Recipient / goal", contextPlaceholder: "e.g. Hiring manager, request a referral" },
   translate: { title: "Translate Email", placeholder: "Paste the text you want translated…", contextLabel: "Target language", contextPlaceholder: "e.g. Spanish" },
   improve: { title: "Improve Writing", placeholder: "Paste the text you want to improve…" },
   rewrite: { title: "Rewrite Email", placeholder: "Paste the text you want to rewrite…", contextLabel: "Desired tone", contextPlaceholder: "e.g. more concise and confident" },
@@ -20,22 +25,16 @@ const meta: Record<ToolAction, { title: string; placeholder: string; contextLabe
   tone_detection: { title: "Tone Detection", placeholder: "Paste the email to analyze its tone…" },
   spam_detection: { title: "Spam Detection", placeholder: "Paste the email to check whether it's spam…" },
   phishing_detection: { title: "Phishing Detection", placeholder: "Paste the suspicious email to analyze…" },
-  subject_generator: { title: "Subject Line Generator", placeholder: "Describe the email you're sending…", contextLabel: "Goal / audience", contextPlaceholder: "e.g. re-engage a cold lead" },
-  follow_up: { title: "Follow-up Generator", placeholder: "Paste the previous email or describe the context…", contextLabel: "Nudge / next step", contextPlaceholder: "e.g. ask for a decision by Friday" },
-  linkedin_outreach: { title: "LinkedIn Outreach", placeholder: "Who are you reaching out to, and why?", contextLabel: "Format", contextPlaceholder: "e.g. connection note or InMail" },
-  interview_email: { title: "Interview Email", placeholder: "Describe the interview context…", contextLabel: "Type", contextPlaceholder: "e.g. schedule, confirm, or thank-you" },
 };
 
 export function AIToolModal({
   open,
   action,
-  userId,
   onClose,
   onSendDraft,
 }: {
   open: boolean;
   action: ToolAction | null;
-  userId?: string;
   onClose: () => void;
   onSendDraft: (subject: string, body: string) => void;
 }) {
@@ -45,6 +44,7 @@ export function AIToolModal({
   const [copied, setCopied] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [ml, setMl] = useState<MlVerdict | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -61,6 +61,7 @@ export function AIToolModal({
       setCopied(false);
       setStreaming(false);
       setErrorMsg(null);
+      setMl(null);
     }
   }, [open, action]);
 
@@ -80,14 +81,26 @@ export function AIToolModal({
     if (!input.trim() || !action) return;
     setErrorMsg(null);
     setOutput("");
+    setMl(null);
     setStreaming(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Fire the local classifier alongside the LLM stream rather than before it.
+    // It resolves in ~1ms against Mistral's several hundred, so the verdict is
+    // on screen long before the first token — and a failure here is silent,
+    // leaving the LLM explanation as the sole output.
+    const mlKind = ML_KIND[action];
+    if (mlKind) {
+      classifyEmail(mlKind, input, controller.signal).then((verdict) => {
+        if (verdict?.available) setMl(verdict);
+      });
+    }
+
     try {
       await streamTool(
-        { user_id: userId, action, input, context },
+        { action, input, context },
         (chunk) => setOutput((prev) => prev + chunk),
         controller.signal
       );
@@ -189,6 +202,9 @@ export function AIToolModal({
                 </Button>
               )}
 
+              {/* Local model verdict — arrives well before the LLM's first token. */}
+              {ml && <MlVerdictCard verdict={ml} />}
+
               {/* Output */}
               {errorMsg ? (
                 <div className="rounded-2xl border border-white/5 bg-white/[0.02]">
@@ -196,7 +212,8 @@ export function AIToolModal({
                 </div>
               ) : streaming && !output ? (
                 <div className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] p-4 text-sm text-neutral-400">
-                  <Loader2 size={16} className="animate-spin" /> Thinking…
+                  <Loader2 size={16} className="animate-spin" />
+                  {ml ? "Writing the explanation…" : "Thinking…"}
                 </div>
               ) : output ? (
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">

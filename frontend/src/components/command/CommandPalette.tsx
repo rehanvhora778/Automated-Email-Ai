@@ -5,9 +5,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, LayoutDashboard, Bot, Reply, Inbox, BarChart3, Users,
-  Bell, Settings as SettingsIcon, User, PenLine, Mail, LogOut, FileText,
-  Send, Languages, Wand2, RefreshCw, CornerDownLeft, Command as CommandIcon,
-  Sparkles, SpellCheck, AlignLeft, ShieldAlert, Type, Clock,
+  Bell, Settings as SettingsIcon, User, PenLine, Mail, LogOut,
+  Languages, Wand2, RefreshCw, CornerDownLeft, Command as CommandIcon,
+  Sparkles, SpellCheck, AlignLeft, ShieldAlert, Fish,
 } from "lucide-react";
 import type { ToolAction } from "../../lib/types";
 import { cn } from "../../lib/cn";
@@ -15,7 +15,7 @@ import { cn } from "../../lib/cn";
 interface Command {
   id: string;
   label: string;
-  group: "Navigation" | "Actions" | "AI Tools";
+  group: "Navigation" | "Actions" | "AI Tools" | "Threat Detection";
   icon: ReactNode;
   keywords?: string;
   run: () => void;
@@ -90,16 +90,13 @@ export function CommandPalette({
       { id: "act-link", group: "Actions", label: "Link Gmail account", icon: <Mail size={16} />, keywords: "connect google", run: () => { onLinkGmail(); onOpenChange(false); } },
       { id: "act-logout", group: "Actions", label: "Log out", icon: <LogOut size={16} />, keywords: "sign out exit", run: () => { onLogout(); onOpenChange(false); } },
 
-      { id: "tool-cover", group: "AI Tools", label: "Write a cover letter", icon: <FileText size={16} />, keywords: "job application", run: tool("cover_letter") },
-      { id: "tool-cold", group: "AI Tools", label: "Write a cold email", icon: <Send size={16} />, keywords: "outreach sales", run: tool("cold_email") },
       { id: "tool-translate", group: "AI Tools", label: "Translate an email", icon: <Languages size={16} />, keywords: "language", run: tool("translate") },
       { id: "tool-improve", group: "AI Tools", label: "Improve my writing", icon: <Wand2 size={16} />, keywords: "grammar clarity", run: tool("improve") },
       { id: "tool-rewrite", group: "AI Tools", label: "Rewrite an email", icon: <RefreshCw size={16} />, keywords: "rephrase", run: tool("rewrite") },
       { id: "tool-grammar", group: "AI Tools", label: "Fix grammar", icon: <SpellCheck size={16} />, keywords: "spelling punctuation", run: tool("grammar_fix") },
       { id: "tool-summarize", group: "AI Tools", label: "Summarize text", icon: <AlignLeft size={16} />, keywords: "tldr key points", run: tool("summarize") },
-      { id: "tool-phishing", group: "AI Tools", label: "Detect phishing", icon: <ShieldAlert size={16} />, keywords: "scam spam security", run: tool("phishing_detection") },
-      { id: "tool-subject", group: "AI Tools", label: "Generate subject lines", icon: <Type size={16} />, keywords: "subject headline", run: tool("subject_generator") },
-      { id: "tool-followup", group: "AI Tools", label: "Write a follow-up", icon: <Clock size={16} />, keywords: "nudge reminder", run: tool("follow_up") },
+      { id: "det-spam", group: "Threat Detection", label: "Detect spam", icon: <ShieldAlert size={16} />, keywords: "junk mail model ml", run: tool("spam_detection") },
+      { id: "det-phishing", group: "Threat Detection", label: "Detect phishing", icon: <Fish size={16} />, keywords: "scam security model ml", run: tool("phishing_detection") },
     ];
   }, [onNavigate, onOpenChange, onCompose, onOpenTool, onLinkGmail, onLogout]);
 
@@ -139,7 +136,7 @@ export function CommandPalette({
 
   // Render grouped, but track a flat running index for keyboard selection.
   let running = -1;
-  const groups: Command["group"][] = ["Navigation", "Actions", "AI Tools"];
+  const groups: Command["group"][] = ["Navigation", "Actions", "AI Tools", "Threat Detection"];
 
   return (
     <AnimatePresence>
