@@ -23,7 +23,9 @@
 
 Every data surface is **real**: inbox summaries, analytics, contacts and notifications are computed live from the Gmail API, and drafts are personalised with your profile. The app deliberately **never auto-sends** — every AI draft is handed to a compose modal for a human "Review & Send".
 
-> **Why it's interesting:** it combines OAuth-based Gmail integration, an LLM prompt layer with 15 writing tools and 13 reply styles, a streaming (NDJSON) agent loop, and real-time analytics — wired together with React Query caching and Supabase row-level security.
+Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn model trained on real labelled corpora — spam **0.986 F1** on 4,528 emails, phishing **0.989 F1** on 7,833 — and calls the LLM only for the prose explanation. See [`ml/`](ml/) for training, evaluation, error analysis and the limitations.
+
+> **Why it's interesting:** it combines OAuth-based Gmail integration, two trained ML classifiers benchmarked against the LLM prompts they replaced, an LLM prompt layer with 6 writing tools and 13 reply styles, a streaming (NDJSON) agent loop, and real-time analytics — wired together with React Query caching and Supabase row-level security.
 
 ---
 
@@ -32,10 +34,12 @@ Every data surface is **real**: inbox summaries, analytics, contacts and notific
 ### 🤖 AI Writing & Assistance
 - **Conversational workspace** — a chat assistant that drafts context-aware emails, with per-conversation memory and an auto-threaded history sidebar.
 - **Smart Reply** — paste any received email and generate replies in up to **13 distinct styles** (professional, friendly, formal, negotiation, apology, sales, technical, persuasive, and more).
-- **AI Tools suite** — **15 one-click tools** across three groups:
+- **AI Tools suite** — one-click tools in two groups:
   - *Write & Edit:* Improve, Rewrite, Grammar Fix, Summarize, Translate
-  - *Analyze & Protect:* Tone Detection, Spam Detection, Phishing Detection
-  - *Generate:* Subject Lines, Follow-up, Cold Email, Cover Letter, LinkedIn Outreach, Interview Email
+  - *Analyze:* Tone Detection
+- **Threat Detection** — a separate section for the two **ML-backed** features, Spam and
+  Phishing Detection. Each shows its live F1 score and training corpus pulled from the
+  running model, because the verdict comes from a trained classifier rather than a prompt.
 - **Live token streaming** — tool output renders progressively as the model generates it.
 
 ### 🧠 AI Agent Mode
@@ -51,7 +55,9 @@ Every data surface is **real**: inbox summaries, analytics, contacts and notific
 - **Notifications** — your latest unread messages, with a real "mark all read".
 
 ### 🔐 Account & Connection
-- **Email/password auth** via Supabase (accounts are auto-confirmed for instant sign-in).
+- **Sign in with Google or email/password** — separate sign-in and sign-up screens.
+  Google is one consent for both the session and Gmail. Email sign-up is verified with a
+  **6-digit one-time code**, then links Gmail later from Settings.
 - **Gmail OAuth 2.0** linking with scope-aware capability display (send / read / modify), re-link and unlink.
 - **Profile** and **Settings** pages showing live account facts, connection health and in-app password reset.
 
@@ -115,6 +121,7 @@ sequenceDiagram
 | **Backend** | FastAPI, Uvicorn, Python 3.10, Pydantic, python-multipart |
 | **AI** | Mistral AI (`mistral-medium-latest`) via the official `mistralai` SDK |
 | **Email** | Gmail API + Google OAuth 2.0 (`google-api-python-client`, `google-auth-oauthlib`) |
+| **Machine Learning** | scikit-learn (TF-IDF, LinearSVC, FeatureUnion, calibration), pandas, NumPy, joblib, Matplotlib, Jupyter |
 | **Data & Auth** | Supabase (PostgreSQL + Auth) with Row-Level Security |
 
 ---
@@ -125,7 +132,8 @@ Base URL: `http://localhost:8000` · all routes are prefixed with `/api/v1`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/auth/signup` | Create an email-confirmed account (Supabase admin API) |
+| `POST` | `/auth/google/link` | Store the Google tokens from a sign-in as the profile's Gmail token |
+| `GET`  | `/auth/me` | Signed-in user's profile + whether Gmail is linked |
 | `POST` | `/chat/` | Conversational AI email assistant with per-thread memory |
 | `GET`  | `/actions/login-google` | Return the Google OAuth consent URL |
 | `GET`  | `/actions/callback` | OAuth callback — stores the Gmail token on the profile |
@@ -135,13 +143,16 @@ Base URL: `http://localhost:8000` · all routes are prefixed with `/api/v1`.
 | `GET`  | `/inbox/summary` | AI structured inbox briefing + stats |
 | `GET`  | `/inbox/messages` | List messages for a tab (Gmail categories/views) |
 | `POST` | `/inbox/action` | Archive / trash / star / mark read / mark important |
-| `POST` | `/ai/tool` | Run one of 15 AI writing tools |
+| `POST` | `/ai/tool` | Run an AI writing tool (adds an `ml` block for spam/phishing) |
 | `POST` | `/ai/tool/stream` | Streaming (token-by-token) variant |
 | `POST` | `/agent/run` | Streamed (NDJSON) multi-step agent execution |
 | `GET`  | `/analytics/overview` | Live Gmail volume, trend, category mix, top senders |
 | `GET`  | `/contacts/list` | Real contacts derived from Gmail |
 | `GET`  | `/notifications/list` | Latest unread inbox messages |
 | `POST` | `/notifications/read_all` | Mark messages read (remove UNREAD label) |
+| `POST` | `/ai/classify/spam` | **ML spam verdict — trained model, no LLM call** |
+| `POST` | `/ai/classify/phishing` | **ML phishing verdict — trained model, no LLM call** |
+| `GET`  | `/ai/classify/health` | Status + stored evaluation metrics for both models |
 
 > Interactive API docs are available at `http://localhost:8000/docs` (FastAPI / Swagger UI) when the backend is running.
 
@@ -166,6 +177,7 @@ Automated-Email-Ai/
 │   │   │   └── notifications.py     # Unread-mail notifications
 │   │   ├── services/
 │   │   │   ├── ai_service.py        # Mistral prompt logic (all AI features)
+│   │   │   ├── ml_service.py        # Trained spam classifier (local inference)
 │   │   │   └── gmail_service.py     # Per-user Gmail API client builder
 │   │   ├── db/supabase.py           # Supabase client + helpers
 │   │   ├── models/chat.py           # Pydantic request models
@@ -182,6 +194,17 @@ Automated-Email-Ai/
 │   │   └── supabaseClient.js        # Supabase browser client
 │   ├── package.json
 │   └── tailwind.config.js
+├── ml/                              # Machine learning module
+│   ├── prepare_data.py              # SpamAssassin corpus -> tidy CSV
+│   ├── prepare_phishing.py          # Nazario phishing mbox -> tidy CSV
+│   ├── train.py                     # Spam: benchmark 3 models, evaluate, save
+│   ├── train_phishing.py            # Phishing: benchmark 3 representations
+│   ├── email_features.py            # Engineered features, shared with backend
+│   ├── notebooks/
+│   │   ├── spam_classifier.ipynb    # EDA, model selection, error analysis
+│   │   └── phishing_classifier.ipynb # Feature-engineering experiment (negative result)
+│   ├── models/                      # Fitted pipelines + metrics + plots
+│   └── README.md                    # Results, limitations, reproduction
 ├── database/
 │   ├── schema.sql                   # Tables, RLS policies, signup trigger
 │   └── migrations/
@@ -204,6 +227,7 @@ Automated-Email-Ai/
 In the Supabase **SQL Editor**, run:
 1. `database/schema.sql` — creates the `profiles` and `chat_messages` tables, RLS policies, and the signup trigger.
 2. `database/migrations/002_conversations.sql` — adds the `conversations` table and links messages to threads.
+3. `database/migrations/003_google_auth.sql` — adds `avatar_url` and teaches the signup trigger to read Google's OAuth metadata.
 
 ### 2. Backend
 
@@ -244,10 +268,119 @@ npm run dev        # → http://localhost:5173
 
 The frontend's Supabase project (URL + anon key) is configured in `frontend/src/supabaseClient.js`, and the backend base URL is the `API_URL` constant (`http://localhost:8000`).
 
-### 4. Google OAuth setup
-- **Authorized redirect URI:** `http://localhost:8000/api/v1/actions/callback`
-- **Scopes:** `gmail.send`, `gmail.readonly`, `gmail.modify`
-- Add your Google account as a **Test user** on the OAuth consent screen.
+### 4. Google sign-in setup
+
+There are two ways to sign in — **Google** or **email + password** — on separate
+sign-in and sign-up screens. Google is the recommended route because one consent grants
+both the session and Gmail access; a password account works fine but has to link Gmail
+separately from Settings.
+
+Only the Google route needs configuring. Three things:
+
+**a. Google Cloud Console** → *APIs & Services → Credentials → your OAuth 2.0 Web client*
+
+Add **both** redirect URIs:
+
+| URI | Used by |
+|---|---|
+| `https://<your-project-ref>.supabase.co/auth/v1/callback` | Supabase sign-in |
+| `http://localhost:8000/api/v1/actions/callback` | the manual "Link Gmail" fallback |
+
+Enable the **Gmail API**, and on the OAuth consent screen add the scopes
+`gmail.send`, `gmail.readonly`, `gmail.modify` plus your Google account as a **Test user**
+(unverified apps are limited to test users).
+
+**b. Supabase Dashboard** → *Authentication → Providers → Google*
+
+Enable it and paste the **same** client ID and client secret from `credentials.json`.
+
+**c. Supabase Dashboard** → *Authentication → URL Configuration*
+
+Set **Site URL** to `http://localhost:5173` and add it under **Redirect URLs**.
+
+### 5. Email OTP setup (for email/password sign-up)
+
+Email sign-up is verified with a 6-digit code. Supabase issues and checks it —
+`signUp` creates an unconfirmed user and emails the code, `verifyOtp` confirms the
+address and returns a session — so there is no OTP table, expiry job or mail credential
+of our own. Two settings make it work:
+
+**a. Supabase Dashboard** → *Authentication → Providers → Email* — turn **Confirm email**
+**on**. With it off, `signUp` returns a session immediately and no code is sent. (The app
+handles that case by letting the user straight in, so it will not break either way.)
+
+**b. Supabase Dashboard** → *Authentication → Email Templates → Confirm signup*
+
+This is the step that is easy to miss. The default template sends a **link**
+(`{{ .ConfirmationURL }}`), not a code. Replace the body with something that includes the
+token:
+
+```html
+<h2>Confirm your email</h2>
+<p>Your verification code is:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
+<p>This code expires in 1 hour.</p>
+```
+
+> **Heads-up on rate limits.** Supabase's built-in email sender is capped at a couple of
+> messages per hour on the free tier, which is fine while developing but will block a live
+> demo. For anything beyond testing, add your own SMTP under
+> *Project Settings → Authentication → SMTP Settings*. The sign-up screen enforces a
+> 60-second resend cooldown so the quota is not burned by impatient clicking.
+
+There is deliberately **no backend signup endpoint**. An endpoint that created
+pre-confirmed accounts through the admin API would be an unauthenticated route straight
+around the verification everyone else goes through.
+
+> **Why the app asks for Gmail permissions at sign-in.** The frontend requests the Gmail
+> scopes in `signInWithOAuth` with `access_type=offline` and `prompt=consent`. Google then
+> returns a refresh token, Supabase exposes it on the session as `provider_refresh_token`,
+> and the app immediately posts it to `POST /api/v1/auth/google/link`, which stores it as
+> the profile's `gmail_token`. Supabase never persists provider tokens, so this hand-off
+> has to happen right after sign-in — that is what makes Gmail linked automatically
+> instead of requiring a second consent screen.
+
+---
+
+## 🛠️ Troubleshooting
+
+### `Unsupported provider: provider is not enabled`
+
+Google sign-in has not been switched on in the Supabase project. `signInWithOAuth`
+navigates the browser straight to Supabase's authorize URL, so Supabase answers with that
+JSON and the browser renders it — the app is already gone and cannot catch it. The sign-in
+screen now checks `/auth/v1/settings` before redirecting and shows a setup message
+instead, but the real fix is two steps, **both** required:
+
+**1. Google Cloud Console** → *APIs & Services → Credentials → your OAuth 2.0 Web client*
+→ **Authorized redirect URIs** → add:
+
+```
+https://<your-project-ref>.supabase.co/auth/v1/callback
+```
+
+Keep `http://localhost:8000/api/v1/actions/callback` as well — the manual "Link Gmail"
+flow still uses it.
+
+**2. Supabase Dashboard** → *Authentication → Providers → Google* → enable it, then paste
+the `client_id` and `client_secret` from `backend/credentials.json`.
+
+Doing only step 2 swaps the error for `redirect_uri_mismatch` from Google, which is the
+same problem one layer along. Provider settings are cached for the page's lifetime, so
+reload the app after enabling.
+
+Verify at any time with:
+
+```bash
+curl -s "https://<your-project-ref>.supabase.co/auth/v1/settings"   -H "apikey: <anon-key>" | grep -o '"google":[a-z]*'
+```
+
+### No code arrives when signing up with email
+
+Check *Authentication → Providers → Email → Confirm email* is **on**, and that the
+*Confirm signup* template contains `{{ .Token }}` rather than only `{{ .ConfirmationURL }}`
+— see step 5 above. Supabase's built-in sender is also capped at a couple of messages per
+hour on the free tier.
 
 ---
 
