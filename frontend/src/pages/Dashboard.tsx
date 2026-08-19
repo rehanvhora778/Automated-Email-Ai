@@ -1,17 +1,15 @@
 import { motion } from "framer-motion";
 import {
-  Mail, Star, ListChecks, Sparkles, Zap, PieChart as PieIcon, Inbox,
+  Mail, Star, ListChecks, Zap, PieChart as PieIcon, Inbox,
 } from "lucide-react";
 import { useInboxSummary } from "../lib/hooks";
 import type { ToolAction } from "../lib/types";
 import { StatsCard } from "../components/dashboard/StatsCard";
-import { AISuggestionCard } from "../components/dashboard/AISuggestionCard";
 import { QuickActionGrid, type QuickActionKey } from "../components/dashboard/QuickActionGrid";
 import { InboxSummary } from "../components/dashboard/InboxSummary";
 import { InboxBreakdownChart } from "../components/dashboard/InboxBreakdownChart";
 import { GlassCard } from "../components/ui/GlassCard";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { EmptyState } from "../components/ui/EmptyState";
 
 function greetingFor(date = new Date()) {
   const h = date.getHours();
@@ -39,7 +37,6 @@ export function Dashboard({
 
   const name = data?.user_name || fallbackName;
   const stats = data?.stats;
-  const suggestions = data?.suggestions ?? [];
 
   const statCards = [
     { label: "Unread Emails", value: stats?.unread ?? 0, icon: <Mail size={20} />, desc: "in your inbox", accent: "from-indigo-500/40 to-blue-500/30" },
@@ -89,38 +86,8 @@ export function Dashboard({
 
       {/* Two-column body */}
       <div className="grid gap-6 xl:grid-cols-3">
-        {/* Left: suggestions + quick actions + chart */}
+        {/* Left: quick actions + chart */}
         <div className="space-y-8 xl:col-span-2">
-          {/* AI suggestions */}
-          <div>
-            <SectionHeader title="Today's AI Suggestions" icon={<Sparkles size={16} />} />
-            {suggestions.length ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {suggestions.map((s, i) => (
-                  <AISuggestionCard
-                    key={i}
-                    title={s.title}
-                    type={s.type}
-                    delay={i * 0.05}
-                    onClick={() => onNavigate("smartReply")}
-                  />
-                ))}
-              </div>
-            ) : (
-              <GlassCard className="p-2">
-                <EmptyState
-                  icon={<Sparkles size={24} />}
-                  title="No suggestions yet"
-                  description={
-                    data?.gmail_linked
-                      ? "You're all caught up — nothing needs action right now."
-                      : "Connect Gmail and AI will suggest replies and follow-ups here."
-                  }
-                />
-              </GlassCard>
-            )}
-          </div>
-
           {/* Quick actions */}
           <div>
             <SectionHeader title="Quick Actions" icon={<Zap size={16} />} />
