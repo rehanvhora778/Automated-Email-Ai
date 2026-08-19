@@ -35,17 +35,3 @@ export function confidenceScore(text: string): number {
   if (/[.?!]["')]?\s*$/.test(text.trim())) score += 4;
   return Math.max(50, Math.min(98, score));
 }
-
-/** Convert a plain-text reply into simple, email-safe HTML. */
-export function toHtml(text: string): string {
-  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return esc
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
-    .join("\n");
-}
-
-/** Normalise a plain-text reply into Markdown (paragraphs preserved). */
-export function toMarkdown(text: string): string {
-  return text.trim().replace(/\n{3,}/g, "\n\n");
-}

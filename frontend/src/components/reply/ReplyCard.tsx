@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { Copy, Check, Pencil, Send, RefreshCw, Code2, Hash, Clock, PenLine, Sparkles } from "lucide-react";
+import { Copy, Check, Pencil, Send, RefreshCw, Clock, PenLine, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "../ui/GlassCard";
 import { Skeleton } from "../ui/Skeleton";
 import { Badge } from "../ui/Badge";
 import { cn } from "../../lib/cn";
 import { REPLY_STYLE_META } from "../../lib/replyStyles";
-import { readingTime, writingTime, confidenceScore, toHtml, toMarkdown } from "../../lib/replyUtils";
+import { readingTime, writingTime, confidenceScore } from "../../lib/replyUtils";
 
 const actionBtn =
   "inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none";
 
-type Copied = null | "text" | "html" | "md";
+type Copied = null | "text";
 
 export function ReplyCard({
   styleKey,
@@ -50,36 +50,6 @@ export function ReplyCard({
       toast.success(`${meta.label} reply copied`);
     } catch {
       toast.error("Couldn't copy to clipboard");
-    }
-  };
-
-  const copyHtml = async () => {
-    const html = toHtml(text);
-    try {
-      if ("ClipboardItem" in window && navigator.clipboard?.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/html": new Blob([html], { type: "text/html" }),
-            "text/plain": new Blob([text], { type: "text/plain" }),
-          }),
-        ]);
-      } else {
-        await navigator.clipboard.writeText(html);
-      }
-      flash("html");
-      toast.success("Copied as HTML");
-    } catch {
-      toast.error("Couldn't copy HTML");
-    }
-  };
-
-  const copyMd = async () => {
-    try {
-      await navigator.clipboard.writeText(toMarkdown(text));
-      flash("md");
-      toast.success("Copied as Markdown");
-    } catch {
-      toast.error("Couldn't copy");
     }
   };
 
@@ -130,14 +100,6 @@ export function ReplyCard({
         <button onClick={copyText} disabled={loading} className={cn(actionBtn, "text-neutral-300 hover:bg-white/5 hover:text-white")}>
           {copied === "text" ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
           {copied === "text" ? "Copied" : "Copy"}
-        </button>
-        <button onClick={copyHtml} disabled={loading} title="Copy as rich HTML" className={cn(actionBtn, "text-neutral-300 hover:bg-white/5 hover:text-white")}>
-          {copied === "html" ? <Check size={14} className="text-emerald-400" /> : <Code2 size={14} />}
-          HTML
-        </button>
-        <button onClick={copyMd} disabled={loading} title="Copy as Markdown" className={cn(actionBtn, "text-neutral-300 hover:bg-white/5 hover:text-white")}>
-          {copied === "md" ? <Check size={14} className="text-emerald-400" /> : <Hash size={14} />}
-          MD
         </button>
         <button onClick={() => setEditing((e) => !e)} disabled={loading} className={cn(actionBtn, "text-neutral-300 hover:bg-white/5 hover:text-white")}>
           <Pencil size={14} /> {editing ? "Done" : "Edit"}
