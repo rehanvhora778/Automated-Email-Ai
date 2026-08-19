@@ -18,6 +18,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { CopilotViewName } from './CopilotView';
 import type { ToolAction } from './lib/types';
 import { API_URL } from './lib/api';
+import { useIsRecovering } from './lib/recoverySession';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 
@@ -48,6 +49,7 @@ interface ConversationSummary {
 
 function App() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const recovering = useIsRecovering();
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -302,7 +304,10 @@ const checkOnboardingStatus = async (userId: string) => {
     setLoading(false);
   };
 
-  if (!user) {
+  // A password reset signs the user in at the code step, before the new
+  // password has been set. Keep the auth screen up until that flow says it is
+  // finished, or its last step would be torn out from under the user.
+  if (!user || recovering) {
     return <AuthScreen />;
   }
 

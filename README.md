@@ -322,6 +322,19 @@ token:
 <p>This code expires in 1 hour.</p>
 ```
 
+**c. Supabase Dashboard** → *Authentication → Email Templates → Reset password*
+
+The "Forgot password?" flow on the sign-in screen uses the same code-based approach, and
+this template has the same default problem — it sends a link, not a code. Replace the body
+with something that includes the token:
+
+```html
+<h2>Reset your password</h2>
+<p>Your password reset code is:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
+<p>This code expires in 1 hour. Ignore this email if you did not request it.</p>
+```
+
 > **Heads-up on rate limits.** Supabase's built-in email sender is capped at a couple of
 > messages per hour on the free tier, which is fine while developing but will block a live
 > demo. For anything beyond testing, add your own SMTP under
@@ -381,6 +394,12 @@ Check *Authentication → Providers → Email → Confirm email* is **on**, and 
 *Confirm signup* template contains `{{ .Token }}` rather than only `{{ .ConfirmationURL }}`
 — see step 5 above. Supabase's built-in sender is also capped at a couple of messages per
 hour on the free tier.
+
+### The password reset email has a link instead of a code
+
+The *Reset password* template still uses `{{ .ConfirmationURL }}`. Add `{{ .Token }}` to it
+— see step 5c above. The six-digit boxes on the reset screen expect a code, so a link
+cannot be entered there.
 
 ---
 

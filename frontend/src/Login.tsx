@@ -15,7 +15,13 @@ import { AuthShell, GoogleButton, OrDivider, authInputClass } from './components
  * On success App's onAuthStateChange picks up the session and replaces this
  * screen, so there is no callback to wire up here.
  */
-export default function Login({ onSwitchToSignup }: { onSwitchToSignup: () => void }) {
+export default function Login({
+  onSwitchToSignup,
+  onForgotPassword,
+}: {
+  onSwitchToSignup: () => void;
+  onForgotPassword: () => void;
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -111,6 +117,16 @@ export default function Login({ onSwitchToSignup }: { onSwitchToSignup: () => vo
             className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 transition-colors hover:text-white"
           >
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            className="text-xs font-semibold text-neutral-400 underline-offset-4 transition-colors hover:text-brand-300 hover:underline"
+          >
+            Forgot password?
           </button>
         </div>
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Login from './Login';
 import Signup from './Signup';
+import ForgotPassword from './ForgotPassword';
 
 /**
  * Chooses between the sign-in and sign-up screens.
@@ -12,7 +13,7 @@ import Signup from './Signup';
  * exactly what it needs and say what that choice means.
  */
 export default function AuthScreen() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
 
   return (
     <AnimatePresence mode="wait">
@@ -24,9 +25,14 @@ export default function AuthScreen() {
         transition={{ duration: 0.18 }}
       >
         {mode === 'signin' ? (
-          <Login onSwitchToSignup={() => setMode('signup')} />
-        ) : (
+          <Login
+            onSwitchToSignup={() => setMode('signup')}
+            onForgotPassword={() => setMode('forgot')}
+          />
+        ) : mode === 'signup' ? (
           <Signup onSwitchToLogin={() => setMode('signin')} />
+        ) : (
+          <ForgotPassword onBackToLogin={() => setMode('signin')} />
         )}
       </motion.div>
     </AnimatePresence>
