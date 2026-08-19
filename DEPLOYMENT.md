@@ -121,9 +121,20 @@ Then back in Render → **Environment** → add:
 | Key | Value |
 |---|---|
 | `OAUTH_REDIRECT_URI` | `https://smart-email-agent-api.onrender.com/api/v1/actions/callback` |
+| `FRONTEND_URL` | `https://automated-email-ai.vercel.app` |
 
-Render redeploys automatically. This value must match the Google entry **character for
-character** — a trailing slash difference is enough to fail.
+Render redeploys automatically. `OAUTH_REDIRECT_URI` must match the Google entry
+**character for character** — a trailing slash difference is enough to fail.
+
+`FRONTEND_URL` is where the OAuth callback sends the browser once Google hands back the
+code. Unset, it falls back to the first entry in `ALLOWED_ORIGINS`, then to localhost.
+
+> **If `OAUTH_REDIRECT_URI` is missing**, the backend now derives the callback from
+> Render's own `RENDER_EXTERNAL_URL` instead of falling back to localhost, and refuses
+> to start the flow at all if it would send you somewhere unreachable. That turns the
+> old silent "page not found" tab into a message naming the exact fix. The Google
+> Console entry in step 3 is still required — nothing can be done server-side about a
+> redirect URI Google has not been told to accept.
 
 ---
 
@@ -262,6 +273,8 @@ for the secrets, which are marked `sync: false` so they are never stored in the 
 | Build fails: `No module named app` | Root Directory is not set to `backend` |
 | Vercel build fails: no `package.json` | Root Directory is not set to `frontend` |
 | `redirect_uri_mismatch` on Link Gmail | `OAUTH_REDIRECT_URI` and the Google Console entry differ |
+| "Link Gmail" opens a page-not-found tab | The Render callback URL is not in Google's **Authorized redirect URIs** (step 3) |
+| Settings says "missing permissions" right after linking | Pre-fix builds stored an empty scope list; re-link once and it clears |
 | Google sign-in returns to localhost | Supabase **Site URL** still points at localhost |
 | `Unsupported provider: provider is not enabled` | Google provider off in Supabase — see the main README |
 | Confirmation email has a link, not a code | The signup template needs `{{ .Token }}` — see the main README |

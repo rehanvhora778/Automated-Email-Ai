@@ -226,7 +226,7 @@ export function Settings({
             )}
           </div>
           <p className="text-[11px] text-neutral-600">
-            Linking opens Google in a new tab. When you're done, come back here — the status refreshes automatically.
+            Linking sends you to Google for consent and brings you straight back here once it's done.
           </p>
         </GlassCard>
       </section>

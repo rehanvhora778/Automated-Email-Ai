@@ -87,6 +87,31 @@ def _user_id_from_bearer(authorization: str | None) -> str:
     return user_id
 
 
+def _granted_scopes(access_token: str) -> str:
+    """Ask Google which scopes this access token actually carries.
+
+    Supabase does not surface the granted scope list on the session, so without
+    this the profile is stored with an empty `scope` and every screen that reads
+    it concludes the mailbox permissions are missing — showing a "re-link Gmail"
+    warning on an account that is perfectly healthy. Google's tokeninfo endpoint
+    is the authoritative answer, and it reflects partial grants correctly when a
+    user unticks one of the boxes on the consent screen.
+    """
+    try:
+        resp = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": access_token},
+            timeout=10,
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"auth: tokeninfo lookup failed: {e}")
+        return ""
+    if resp.status_code != 200:
+        print(f"auth: tokeninfo returned {resp.status_code}")
+        return ""
+    return (resp.json() or {}).get("scope", "") or ""
+
+
 @router.post("/google/link")
 async def link_google_tokens(
     payload: GoogleTokenPayload,
@@ -123,7 +148,7 @@ async def link_google_tokens(
         "access_token": payload.provider_token,
         "refresh_token": refresh_token,
         "token_type": "Bearer",
-        "scope": payload.scope or "",
+        "scope": payload.scope or _granted_scopes(payload.provider_token),
         "expires_in": payload.expires_in,
         "source": "supabase_google_signin",
     }

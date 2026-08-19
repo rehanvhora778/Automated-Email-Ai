@@ -206,9 +206,41 @@ const checkOnboardingStatus = async (userId: string) => {
     if (!user) return;
     try {
       const res = await axios.get(`${API_URL}/api/v1/actions/login-google?user_id=${user.id}`);
-      window.open(res.data.url, '_blank');
-    } catch (e) { alert("Error connecting to Gmail API"); }
+      if (!res.data?.url) {
+        toast.error("Gmail linking is unavailable right now. Please try again later.");
+        return;
+      }
+      // Same tab: Google refuses to render its consent screen inside some
+      // popup/blocker contexts, and a background tab is easy to lose. The
+      // callback redirects straight back here when it is done.
+      window.location.href = res.data.url;
+    } catch (e) {
+      // The backend returns an actionable message when OAuth is misconfigured
+      // (for example the redirect URI still pointing at localhost). Showing it
+      // beats a generic failure the user cannot do anything about.
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      toast.error(detail || "Couldn't start Gmail linking. Check your connection and try again.");
+      console.error("Gmail link failed", e);
+    }
   };
+
+  /**
+   * Surface the result of the Gmail OAuth round-trip.
+   *
+   * The backend callback sends the browser back to `/?gmail=linked` (or
+   * `?gmail=error&reason=...`). Read it once, tell the user, then strip the
+   * params so a refresh does not replay the toast.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('gmail');
+    if (!status) return;
+
+    if (status === 'linked') toast.success('Gmail linked successfully.');
+    else toast.error(params.get('reason') || 'Linking Gmail failed. Please try again.');
+
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   // Open the compose modal, prefilled with the AI draft
   const handleSendEmail = (subject: string, body: string) => {
