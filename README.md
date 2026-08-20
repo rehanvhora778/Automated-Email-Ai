@@ -313,30 +313,44 @@ missing-table error.
 
 **b. Email delivery for verification codes**
 
-Signup and password-reset codes are issued and checked by this backend, not by
-Supabase. Supabase's mailer sends a confirmation *link* unless each template is edited to
-include `{{ .Token }}`, and its code length is a project setting the app cannot read — both
-are dashboard state that silently broke the six-box screens. Owning the code removes that
-whole class of problem, and the emails now always contain a six-digit number.
+Codes are issued and checked by this backend, not by Supabase, whose mailer sends a
+confirmation *link* unless each template is edited and whose code length is a project
+setting the app cannot read. Owning the code removes that whole class of problem.
 
-That needs an SMTP sender. Any provider works; Gmail is the quickest if you already have an
-account:
+Sending needs a provider. **Use an HTTP one in production**: Render's free tier — like most
+PaaS hosts — blocks outbound connections on the SMTP ports, so a perfectly valid Gmail app
+password fails with `[Errno 101] Network is unreachable` and looks exactly like a
+credentials problem. HTTPS is not blocked.
 
-1. Turn on **2-Step Verification** at <https://myaccount.google.com/security>
-2. Create an **App Password** at <https://myaccount.google.com/apppasswords>
-3. Set these on the backend (Render → *Environment*, or `backend/.env` locally):
+*Recommended — Brevo* (300 emails/day free, and it will mail any address once a single
+sender is verified):
+
+1. Sign up at <https://www.brevo.com>
+2. Verify your sender address under <https://app.brevo.com/senders/list>
+3. Create an API key at <https://app.brevo.com/settings/keys/api>
+4. Set on the backend (Render → *Environment*):
 
 | Key | Value |
 |---|---|
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `587` |
-| `SMTP_USER` | your Gmail address |
-| `SMTP_PASSWORD` | the 16-character App Password — **not** your account password |
-| `SMTP_FROM` | your Gmail address |
+| `BREVO_API_KEY` | the `xkeysib-…` key |
+| `MAIL_FROM` | the sender address you verified |
+| `MAIL_FROM_NAME` | `Smart Email Agent` (optional) |
 
-Check it with `GET /api/v1/otp/health`, which reports `{"smtp_configured": true}` once the
-values are in place. Gmail's own SMTP is capped around 500 messages a day, which is ample
-here; swap in Brevo, Mailgun or SES if you ever outgrow it.
+*Alternative — Resend* (`RESEND_API_KEY` + `MAIL_FROM`). Note its shared
+`onboarding@resend.dev` sender can only mail your own account address; reaching anyone else
+needs a verified domain.
+
+*Local development* can still use SMTP — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+`SMTP_PASSWORD`, `SMTP_FROM` — since nothing blocks it there. With several credentials
+present the order is Resend, Brevo, then SMTP; `EMAIL_PROVIDER` forces one.
+
+Check it with **`GET /api/v1/otp/health?check=true`**, which reports the chosen provider and
+authenticates against it without sending:
+
+```json
+{ "email_configured": true, "provider": "brevo", "connection_ok": true,
+  "detail": "brevo API key accepted." }
+```
 
 Supabase's *Confirm signup* and *Reset password* templates are no longer used by the app,
 so they can be left alone — as can *Confirm email* under *Providers → Email*, which only
@@ -398,10 +412,14 @@ curl -s "https://<your-project-ref>.supabase.co/auth/v1/settings"   -H "apikey: 
 
 ### No code arrives when signing up or resetting a password
 
-Check `GET /api/v1/otp/health` on the backend. If it reports `smtp_configured: false`, the
-`SMTP_*` variables are missing — see step 5b. If it reports true and mail still does not
-arrive, the send itself is failing: the backend logs the SMTP error, and Gmail in
-particular rejects an account password where an App Password is required.
+Call `GET /api/v1/otp/health?check=true`. It names the provider and reports what that
+provider said, which separates the three usual causes:
+
+| `detail` | Cause |
+|---|---|
+| `Network is unreachable` | The host blocks outbound SMTP — switch to Brevo or Resend, see step 5b |
+| `rejected the API key` | Wrong or revoked key |
+| `from address is not verified` | `MAIL_FROM` is not a verified sender on that account |
 
 ### Every code request fails
 

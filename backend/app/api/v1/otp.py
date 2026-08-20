@@ -338,7 +338,10 @@ async def health(check: bool = False):
     the mail server said. Nothing is sent and no credential is echoed back.
     """
     result = {
-        "smtp_configured": mailer.is_configured(),
+        "smtp_configured": mailer.is_configured(),  # kept for older checks
+        "email_configured": mailer.is_configured(),
+        "provider": mailer.active_provider(),
+        "mail_from": mailer.MAIL_FROM or None,
         "smtp_host": mailer.SMTP_HOST or None,
         "smtp_port": mailer.SMTP_PORT,
         "starttls": mailer.SMTP_STARTTLS,

@@ -29,14 +29,9 @@ services:
         sync: false
       - key: FRONTEND_URL              # https://<your-app>.vercel.app - where OAuth returns to
         sync: false
-      # SMTP for signup / password-reset codes. Gmail needs an App Password.
-      - key: SMTP_HOST                 # e.g. smtp.gmail.com
+      # Email for signup / password-reset codes. Render blocks outbound SMTP,
+      # so use an HTTP provider here rather than SMTP_*.
+      - key: BREVO_API_KEY           # https://app.brevo.com/settings/keys/api
         sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
+      - key: MAIL_FROM               # a sender address verified with Brevo
         sync: false
