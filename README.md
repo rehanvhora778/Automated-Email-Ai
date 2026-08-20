@@ -300,62 +300,58 @@ Set **Site URL** to `http://localhost:5173` and add it under **Redirect URLs**.
 
 ### 5. Email OTP setup (for email/password sign-up)
 
-Email sign-up is verified with a 6-digit code. Supabase issues and checks it —
-`signUp` creates an unconfirmed user and emails the code, `verifyOtp` confirms the
-address and returns a session — so there is no OTP table, expiry job or mail credential
-of our own. Two settings make it work:
+Email sign-up and password reset are verified with a 6-digit code that **this backend**
+issues, mails and checks. Two things make it work: a table to keep the codes in, and an
+SMTP sender.
 
-**a. Supabase Dashboard** → *Authentication → Providers → Email* — turn **Confirm email**
-**on**. With it off, `signUp` returns a session immediately and no code is sent. (The app
-handles that case by letting the user straight in, so it will not break either way.)
+**a. Run the migration**
 
-**b. Supabase Dashboard** → *Authentication → Email Templates → Confirm signup*
+Supabase Dashboard → *SQL Editor* → paste **`database/migrations/004_email_otp.sql`** →
+**Run**. It creates `public.email_otps`, where codes are held as salted hashes with a
+ten-minute expiry and a five-attempt limit. Without it, every code request fails with a
+missing-table error.
 
-This is the step that is easy to miss. The default template sends a **link**
-(`{{ .ConfirmationURL }}`), not a code. Replace the body with something that includes the
-token:
+**b. Email delivery for verification codes**
 
-```html
-<h2>Confirm your email</h2>
-<p>Your verification code is:</p>
-<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
-<p>This code expires in 1 hour.</p>
-```
+Signup and password-reset codes are issued and checked by this backend, not by
+Supabase. Supabase's mailer sends a confirmation *link* unless each template is edited to
+include `{{ .Token }}`, and its code length is a project setting the app cannot read — both
+are dashboard state that silently broke the six-box screens. Owning the code removes that
+whole class of problem, and the emails now always contain a six-digit number.
 
-**c. Supabase Dashboard** → *Authentication → Email Templates → Reset password* — optional
+That needs an SMTP sender. Any provider works; Gmail is the quickest if you already have an
+account:
 
-The "Forgot password?" flow works either way, so this one is a preference rather than a
-requirement. The stock template sends a **link**: clicking it returns to the app with a
-recovery session, which the app detects and answers by opening the "choose a new password"
-screen directly. Adding `{{ .Token }}` instead sends a **code**, which keeps the whole
-reset inside the tab the user started in — better when the link would otherwise open in a
-different browser than the one they were using.
+1. Turn on **2-Step Verification** at <https://myaccount.google.com/security>
+2. Create an **App Password** at <https://myaccount.google.com/apppasswords>
+3. Set these on the backend (Render → *Environment*, or `backend/.env` locally):
 
-To switch to codes, replace the body with something that includes the token:
+| Key | Value |
+|---|---|
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | your Gmail address |
+| `SMTP_PASSWORD` | the 16-character App Password — **not** your account password |
+| `SMTP_FROM` | your Gmail address |
 
-```html
-<h2>Reset your password</h2>
-<p>Your password reset code is:</p>
-<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
-<p>This code expires in 1 hour. Ignore this email if you did not request it.</p>
-```
+Check it with `GET /api/v1/otp/health`, which reports `{"smtp_configured": true}` once the
+values are in place. Gmail's own SMTP is capped around 500 messages a day, which is ample
+here; swap in Brevo, Mailgun or SES if you ever outgrow it.
 
-**d. Supabase Dashboard** → *Authentication → Providers → Email → Email OTP Length*
+Supabase's *Confirm signup* and *Reset password* templates are no longer used by the app,
+so they can be left alone — as can *Confirm email* under *Providers → Email*, which only
+governs Supabase's own mailer.
 
-Set this to **6** so it matches the six boxes on screen. It is a per-project setting and
-not always 6 by default — a project issuing 8-digit codes into a 6-box field produces a
-code that cannot be entered, with nothing on screen explaining why. The field grows to fit
-a longer *pasted* code as a safety net, but matching the setting is the real fix.
+> **Heads-up on rate limits.** The backend allows 5 codes per address per hour, and the
+> screens enforce a 60-second resend cooldown, so an impatient user cannot burn through
+> your provider's quota.
 
-> **Heads-up on rate limits.** Supabase's built-in email sender is capped at a couple of
-> messages per hour on the free tier, which is fine while developing but will block a live
-> demo. For anything beyond testing, add your own SMTP under
-> *Project Settings → Authentication → SMTP Settings*. The sign-up screen enforces a
-> 60-second resend cooldown so the quota is not burned by impatient clicking.
-
-There is deliberately **no backend signup endpoint**. An endpoint that created
-pre-confirmed accounts through the admin API would be an unauthenticated route straight
-around the verification everyone else goes through.
+Accounts are created by `POST /api/v1/otp/verify-signup`, and **only** after the emailed
+code has been checked and burned. That ordering is the whole point: an endpoint that
+created pre-confirmed accounts through the admin API without it would be an
+unauthenticated route straight around the verification everyone else goes through. The
+password travels with that same call rather than being parked anywhere while the code is
+outstanding.
 
 > **Why the app asks for Gmail permissions at sign-in.** The frontend requests the Gmail
 > scopes in `signInWithOAuth` with `access_type=offline` and `prompt=consent`. Google then
@@ -400,23 +396,17 @@ Verify at any time with:
 curl -s "https://<your-project-ref>.supabase.co/auth/v1/settings"   -H "apikey: <anon-key>" | grep -o '"google":[a-z]*'
 ```
 
-### A confirmation link arrives instead of a code
+### No code arrives when signing up or resetting a password
 
-The *Confirm signup* template still uses `{{ .ConfirmationURL }}`. Replace it with
-`{{ .Token }}` — see step 5b. The link does work (it confirms the address and signs the
-user in), but it cannot be typed into the six boxes the screen is showing.
+Check `GET /api/v1/otp/health` on the backend. If it reports `smtp_configured: false`, the
+`SMTP_*` variables are missing — see step 5b. If it reports true and mail still does not
+arrive, the send itself is failing: the backend logs the SMTP error, and Gmail in
+particular rejects an account password where an App Password is required.
 
-### The code is the wrong length to enter
+### Every code request fails
 
-*Authentication → Providers → Email → Email OTP Length* is not 6 — see step 5d. Pasting
-still works, since the field grows to fit, but typing runs out of boxes.
-
-### No code arrives when signing up with email
-
-Check *Authentication → Providers → Email → Confirm email* is **on**, and that the
-*Confirm signup* template contains `{{ .Token }}` rather than only `{{ .ConfirmationURL }}`
-— see step 5 above. Supabase's built-in sender is also capped at a couple of messages per
-hour on the free tier.
+`database/migrations/004_email_otp.sql` has not been run — the backend has nowhere to store
+the codes.
 
 ### The password reset email has a link instead of a code
 

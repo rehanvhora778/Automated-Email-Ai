@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications
+from app.api.v1 import chat, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications, otp
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -69,6 +69,9 @@ app.include_router(contacts.router, prefix="/api/v1/contacts", tags=["Contacts"]
 
 # 11. Notifications (real unread Gmail messages + mark-all-read)
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+
+# 12. Email OTP (first-party signup / password-reset codes over SMTP)
+app.include_router(otp.router, prefix="/api/v1/otp", tags=["OTP"])
 
 @app.get("/")
 def home():

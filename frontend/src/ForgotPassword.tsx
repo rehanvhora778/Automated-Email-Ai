@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient';
 import { AuthShell, authInputClass } from './components/auth/AuthShell';
 import { OtpInput } from './components/auth/OtpInput';
 import { setRecovering } from './lib/recoverySession';
+import { requestOtp, verifyRecoveryCode, otpErrorMessage } from './lib/otpApi';
 
 const MIN_PASSWORD = 6;
 const OTP_LENGTH = 6;
@@ -16,15 +17,16 @@ const RESEND_COOLDOWN_SECONDS = 60;
 /**
  * Password reset, in three steps: email, emailed code, new password.
  *
- * Built on Supabase's own recovery OTP, matching how Signup verifies an
- * address: `resetPasswordForEmail` mails the code, `verifyOtp({ type:
- * 'recovery' })` checks it and returns a session, and that session is what
- * authorises the `updateUser` call. No reset tokens of our own to store, expire
- * or leak.
+ * The code comes from our own backend rather than Supabase's mailer, for the
+ * reasons in `otpApi` — chiefly that Supabase sends a *link* unless the
+ * project's template is edited. The code and the new password are submitted
+ * together at step 3, so a valid code is never spent before there is something
+ * to spend it on, and a rejected one drops the user back to step 2.
  *
- * The session appearing at step 2 is the subtle part — see `recoverySession`
- * for why this screen has to hold the app's render gate open until step 3 has
- * actually saved the password.
+ * `startAtPassword` handles the other way in: a Supabase reset link that
+ * predates this change still lands in the app with a live recovery session, so
+ * that case skips to step 3 and saves through the session instead. See
+ * `recoverySession` for why the app's render gate has to stay open for it.
  */
 type Step = 'email' | 'code' | 'password';
 
@@ -47,7 +49,6 @@ export default function ForgotPassword({
   const [showPassword, setShowPassword] = useState(false);
 
   const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
@@ -99,22 +100,14 @@ export default function ForgotPassword({
     }
 
     setSending(true);
-    // redirectTo matters when the project's template sends a link rather than
-    // a code: without it Supabase falls back to the Site URL, which may be a
-    // different environment than the one the user is standing in.
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: window.location.origin,
-    });
-    setSending(false);
-
-    if (error) {
-      toast.error(
-        /rate|limit|security/i.test(error.message)
-          ? 'Too many emails just now — wait a minute and try again.'
-          : error.message
-      );
+    try {
+      await requestOtp(cleanEmail, 'recovery');
+    } catch (err) {
+      setSending(false);
+      toast.error(otpErrorMessage(err, 'Could not send the code. Try again.'));
       return;
     }
+    setSending(false);
 
     // Deliberately not reporting whether the address has an account: that
     // answer would let anyone test which emails are registered here.
@@ -124,46 +117,22 @@ export default function ForgotPassword({
   };
 
   // ---------- step 2: check the code ----------
-  const handleVerify = async (submitted?: string) => {
+  const handleVerify = (submitted?: string) => {
     const token = (submitted ?? code).trim();
-    if (verifying || token.length < MIN_OTP) return;
+    if (token.length < MIN_OTP) return;
 
-    // Raise the flag *before* verifying: a correct code signs the user in, and
-    // App would otherwise replace this screen with the dashboard right here.
-    setRecovering(true);
-    setVerifying(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: cleanEmail,
-      token,
-      type: 'recovery',
-    });
-    setVerifying(false);
-
-    if (error) {
-      setRecovering(false);
-      setCode('');
-      toast.error(
-        /expired/i.test(error.message)
-          ? 'That code has expired — send a new one.'
-          : 'That code is not right. Check it and try again.'
-      );
-      return;
-    }
-
+    // Nothing is checked here. The code and the new password are sent together
+    // in one call, so a valid code is never spent before there is something to
+    // spend it on — and a wrong one sends the user back to this step.
     setStep('password');
   };
 
   const handleResend = async () => {
     if (cooldown > 0) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: window.location.origin,
-    });
-    if (error) {
-      toast.error(
-        /rate|limit|security/i.test(error.message)
-          ? 'Too many emails just now — wait a minute and try again.'
-          : error.message
-      );
+    try {
+      await requestOtp(cleanEmail, 'recovery');
+    } catch (err) {
+      toast.error(otpErrorMessage(err, 'Could not send a new code. Try again shortly.'));
       return;
     }
     setCooldown(RESEND_COOLDOWN_SECONDS);
@@ -185,21 +154,51 @@ export default function ForgotPassword({
     }
 
     setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password });
+
+    // Two ways to be standing here. Following an older Supabase reset link
+    // already established a session, so the password changes through it. The
+    // code path has no session: the backend checks the code and sets the
+    // password, then we sign in with it.
+    if (startAtPassword) {
+      const { error } = await supabase.auth.updateUser({ password });
+      setSaving(false);
+      if (error) {
+        toast.error(
+          /should be different|same as/i.test(error.message)
+            ? 'That is already your password — pick a new one.'
+            : error.message
+        );
+        return;
+      }
+      toast.success('Password updated. You are signed in.');
+      setRecovering(false);
+      return;
+    }
+
+    try {
+      await verifyRecoveryCode({ email: cleanEmail, code, password });
+    } catch (err) {
+      setSaving(false);
+      const message = otpErrorMessage(err, 'Could not reset the password. Try again.');
+      toast.error(message);
+      // A rejected code belongs back on the code step, with the boxes cleared.
+      if (/code/i.test(message)) {
+        setCode('');
+        setStep('code');
+      }
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
     setSaving(false);
 
     if (error) {
-      toast.error(
-        /should be different|same as/i.test(error.message)
-          ? 'That is already your password — pick a new one.'
-          : error.message
-      );
+      toast.success('Password updated — sign in with your new password.');
+      leave();
       return;
     }
 
     toast.success('Password updated. You are signed in.');
-    // Lowering the flag hands control back to App, which now has a session and
-    // drops straight into the app — no second sign-in needed.
     setRecovering(false);
   };
 
@@ -301,7 +300,6 @@ export default function ForgotPassword({
             value={code}
             onChange={setCode}
             onComplete={handleVerify}
-            disabled={verifying}
             length={OTP_LENGTH}
           />
         </div>
@@ -309,18 +307,10 @@ export default function ForgotPassword({
         <button
           type="button"
           onClick={() => handleVerify()}
-          disabled={verifying || code.length < MIN_OTP}
+          disabled={code.length < MIN_OTP}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient px-6 py-3.5 text-sm font-bold text-white shadow-glow transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {verifying ? (
-            <>
-              <Loader2 size={17} className="animate-spin" /> Checking…
-            </>
-          ) : (
-            <>
-              <MailCheck size={16} /> Verify code
-            </>
-          )}
+          <MailCheck size={16} /> Continue
         </button>
 
         <div className="mt-4 text-center text-xs text-neutral-500">

@@ -6,12 +6,11 @@ Two ways in:
   Supabase issues the session. The sign-in requests Gmail scopes alongside the
   identity scopes, so one consent covers both and Gmail ends up linked with no
   second approval screen.
-* **Email + password** — handled entirely client-side by Supabase, which emails
-  a one-time code and confirms the address via `verifyOtp`. There is no backend
-  signup endpoint on purpose: one that created pre-confirmed accounts through
-  the admin API would be an open route around the verification everyone else
-  goes through. Gmail stays unlinked on this path until the user runs the
-  "Link Gmail" flow, since no Google consent has happened.
+* **Email + password** — verified with a code this backend issues and mails
+  itself; see `otp.py`. The account is created there, after the code is
+  checked, which is what keeps that admin-API call from being an open route
+  around verification. Gmail stays unlinked on this path until the user runs
+  the "Link Gmail" flow, since no Google consent has happened.
 
 The Google path needs backend help Supabase cannot provide. Google returns a
 token good for the Gmail API too, and Supabase exposes it on the session as

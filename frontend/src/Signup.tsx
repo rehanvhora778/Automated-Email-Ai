@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { supabase } from './supabaseClient';
 import { startGoogleAuth } from './lib/googleAuth';
 import { AuthShell, GoogleButton, OrDivider, authInputClass } from './components/auth/AuthShell';
+import { requestOtp, verifySignupCode, otpErrorMessage } from './lib/otpApi';
 import { OtpInput } from './components/auth/OtpInput';
 
 const MIN_PASSWORD = 6;
@@ -16,12 +17,16 @@ const RESEND_COOLDOWN_SECONDS = 60;
 /**
  * Account creation, in two steps: details, then an emailed one-time code.
  *
- * The verification is Supabase's own signup OTP rather than a hand-rolled one.
- * `supabase.auth.signUp` creates an unconfirmed user and emails a code;
- * `verifyOtp({ type: 'signup' })` confirms the address and returns a session in
- * the same call. That means no OTP table, no expiry cron, no code hashing and
- * no email credentials of our own — Supabase already does all of it, including
- * rate limiting.
+ * The code is issued and checked by our own backend rather than by Supabase.
+ * Supabase's mailer sends a confirmation *link* unless the project's email
+ * template is edited to include `{{ .Token }}`, and its code length is a
+ * project setting the app cannot see — both are dashboard state that silently
+ * broke these six boxes. `/api/v1/otp` owns the code, its expiry and its
+ * attempt limits, and mails it over the deployment's SMTP.
+ *
+ * Supabase still owns the account: no user exists until the code checks out,
+ * at which point the backend creates it pre-confirmed and the browser signs in
+ * with the password the user just chose.
  *
  * Google sign-up skips this entirely: Google has already verified the address.
  */
@@ -82,35 +87,14 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
     if (loading || googleLoading || !validate()) return;
 
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password,
-      options: { data: { full_name: fullName.trim() } },
-    });
+    try {
+      await requestOtp(cleanEmail, 'signup');
+    } catch (err) {
+      setLoading(false);
+      toast.error(otpErrorMessage(err, 'Could not send the code. Try again.'));
+      return;
+    }
     setLoading(false);
-
-    if (error) {
-      toast.error(
-        /already registered|already been registered/i.test(error.message)
-          ? 'An account with this email already exists — try signing in.'
-          : error.message
-      );
-      return;
-    }
-
-    // Supabase deliberately does not error on an existing address (that would
-    // leak which emails are registered); it returns a user with no identities.
-    if (data.user && data.user.identities?.length === 0) {
-      toast.error('An account with this email already exists — try signing in.');
-      return;
-    }
-
-    // If the project has "Confirm email" switched off, signUp returns a live
-    // session and there is nothing to verify — let them straight in.
-    if (data.session) {
-      toast.success('Account created. Welcome!');
-      return;
-    }
 
     setStep('verify');
     setCooldown(RESEND_COOLDOWN_SECONDS);
@@ -122,20 +106,34 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
     if (verifying || token.length < MIN_OTP) return;
 
     setVerifying(true);
-    const { error } = await supabase.auth.verifyOtp({
+    try {
+      // Creates the account, pre-confirmed, only once the code is accepted.
+      await verifySignupCode({
+        email: cleanEmail,
+        code: token,
+        password,
+        full_name: fullName.trim(),
+      });
+    } catch (err) {
+      setVerifying(false);
+      setCode('');
+      toast.error(otpErrorMessage(err, 'That code is not right. Check it and try again.'));
+      return;
+    }
+
+    // The account exists now, so sign in with the password just chosen. App's
+    // onAuthStateChange sees the session and swaps this screen for the app.
+    const { error } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
-      token,
-      type: 'signup',
+      password,
     });
     setVerifying(false);
 
     if (error) {
-      setCode('');
-      toast.error(
-        /expired/i.test(error.message)
-          ? 'That code has expired — send a new one.'
-          : 'That code is not right. Check it and try again.'
-      );
+      // The code was right and the account was created — only the automatic
+      // sign-in failed, so say that rather than blaming the code.
+      toast.error('Account created, but signing in failed. Try signing in with your new password.');
+      onSwitchToLogin();
       return;
     }
     // A session now exists; App's onAuthStateChange swaps this screen out.
@@ -144,13 +142,10 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
 
   const handleResend = async () => {
     if (cooldown > 0) return;
-    const { error } = await supabase.auth.resend({ type: 'signup', email: cleanEmail });
-    if (error) {
-      toast.error(
-        /rate|limit|security/i.test(error.message)
-          ? 'Too many emails just now — wait a minute before trying again.'
-          : error.message
-      );
+    try {
+      await requestOtp(cleanEmail, 'signup');
+    } catch (err) {
+      toast.error(otpErrorMessage(err, 'Could not send a new code. Try again shortly.'));
       return;
     }
     setCooldown(RESEND_COOLDOWN_SECONDS);
