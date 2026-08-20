@@ -114,6 +114,16 @@ def gmail_sender(validate: bool = False) -> dict | None:
         _gmail_sender_cache = {}
         return None
 
+    if not MAIL_GMAIL_PROFILE_ID and candidates:
+        # Worth saying out loud: without a pinned profile this picks somebody's
+        # personal mailbox to send system mail from, and which mailbox depends
+        # on who signed up first. Fine as a last resort, wrong as a silent
+        # default — set MAIL_GMAIL_PROFILE_ID, or configure a mail provider.
+        print(
+            "mailer: no MAIL_GMAIL_PROFILE_ID set — falling back to a linked "
+            f"user's Gmail ({candidates[0]['id'][:8]}…) to send system mail"
+        )
+
     if not validate:
         # Cheap path for "is this transport available at all".
         return candidates[0]

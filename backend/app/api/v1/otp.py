@@ -391,4 +391,6 @@ async def health(check: bool = False):
         if mailer.active_provider() == "gmail_api":
             sender = mailer.gmail_sender()
             result["mail_from"] = (sender or {}).get("address") or result.get("mail_from")
+            # Whether this address was chosen or merely the one that turned up.
+            result["sender_pinned"] = bool(mailer.MAIL_GMAIL_PROFILE_ID)
     return result
