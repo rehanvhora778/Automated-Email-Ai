@@ -373,24 +373,29 @@ async def health(check: bool = False):
     `?check=true` also opens a real connection and authenticates, reporting what
     the mail server said. Nothing is sent and no credential is echoed back.
     """
+    provider = mailer.active_provider()
     result = {
-        "smtp_configured": mailer.is_configured(),  # kept for older checks
         "email_configured": mailer.is_configured(),
-        "provider": mailer.active_provider(),
+        "provider": provider,
         "mail_from": mailer.MAIL_FROM or None,
-        "smtp_host": mailer.SMTP_HOST or None,
-        "smtp_port": mailer.SMTP_PORT,
-        "starttls": mailer.SMTP_STARTTLS,
-        # Enough to spot a typo without disclosing the address in full.
-        "smtp_user_domain": (mailer.SMTP_USER.split("@")[-1] if "@" in mailer.SMTP_USER else None),
     }
+
+    # Only the settings that actually apply. Reporting SMTP host and port while
+    # sending over an HTTP API invites exactly the wrong conclusion about where
+    # a failure is coming from.
+    if provider == "smtp":
+        result["smtp_host"] = mailer.SMTP_HOST or None
+        result["smtp_port"] = mailer.SMTP_PORT
+        result["starttls"] = mailer.SMTP_STARTTLS
+
     if check:
         ok, detail = mailer.check_connection()
         result["connection_ok"] = ok
         result["detail"] = detail
-        if mailer.active_provider() == "gmail_api":
+        if provider == "gmail_api":
             sender = mailer.gmail_sender()
             result["mail_from"] = (sender or {}).get("address") or result.get("mail_from")
             # Whether this address was chosen or merely the one that turned up.
             result["sender_pinned"] = bool(mailer.MAIL_GMAIL_PROFILE_ID)
+
     return result
