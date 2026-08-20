@@ -6,8 +6,9 @@ import { AuthShell, authInputClass } from './components/auth/AuthShell';
 import { OtpInput } from './components/auth/OtpInput';
 import { setRecovering } from './lib/recoverySession';
 import { requestOtp, verifyRecoveryCode, otpErrorMessage } from './lib/otpApi';
+import { PasswordChecklist } from './components/auth/PasswordChecklist';
+import { passwordIsValid } from './lib/passwordPolicy';
 
-const MIN_PASSWORD = 6;
 const OTP_LENGTH = 6;
 // Supabase's OTP length is a project setting; accept whatever it issues so a
 // project configured for 8 digits is not silently unenterable.
@@ -144,8 +145,8 @@ export default function ForgotPassword({
     e.preventDefault();
     if (saving) return;
 
-    if (password.length < MIN_PASSWORD) {
-      toast.error(`Password must be at least ${MIN_PASSWORD} characters.`);
+    if (!passwordIsValid(password)) {
+      toast.error('Your password does not meet all the requirements listed.');
       return;
     }
     if (password !== confirm) {
@@ -223,7 +224,7 @@ export default function ForgotPassword({
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={`New password (min ${MIN_PASSWORD} characters)`}
+              placeholder="New password"
               autoComplete="new-password"
               autoFocus
               className={authInputClass}
@@ -237,6 +238,8 @@ export default function ForgotPassword({
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
+
+          <PasswordChecklist value={password} />
 
           <div className="relative">
             <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />

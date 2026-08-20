@@ -10,6 +10,8 @@ import { GlassCard } from "../components/ui/GlassCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { supabase } from "../supabaseClient";
+import { PasswordChecklist } from "../components/auth/PasswordChecklist";
+import { passwordIsValid } from "../lib/passwordPolicy";
 
 function Row({ icon, title, desc, action }: { icon: ReactNode; title: string; desc?: ReactNode; action?: ReactNode }) {
   return (
@@ -109,19 +111,40 @@ export function Settings({
   const [savingPassword, setSavingPassword] = useState(false);
 
   const handleResetPassword = async () => {
-    if (newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters.");
+    if (!passwordIsValid(newPassword)) {
+      toast.error("Your password does not meet all the requirements listed.");
       return;
     }
     if (newPassword !== confirmPassword) {
       toast.error("Passwords do not match.");
       return;
     }
+
     setSavingPassword(true);
+
+    // Supabase has no "is this my current password" call, so ask the only way
+    // there is: try to sign in with it. Succeeding means nothing would change,
+    // and reporting a successful update would be untrue.
+    if (userEmail) {
+      const { error: sameError } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: newPassword,
+      });
+      if (!sameError) {
+        setSavingPassword(false);
+        toast.error("That is already your current password. Choose a different one.");
+        return;
+      }
+    }
+
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setSavingPassword(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(
+        /should be different|same as/i.test(error.message)
+          ? "That is already your current password. Choose a different one."
+          : error.message
+      );
       return;
     }
     setNewPassword("");
@@ -239,7 +262,7 @@ export function Settings({
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
-                placeholder="New password (min. 6 characters)"
+                placeholder="New password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className={inputClass}
@@ -253,6 +276,8 @@ export function Settings({
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+
+            <PasswordChecklist value={newPassword} />
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Confirm new password"

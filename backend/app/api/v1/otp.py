@@ -28,7 +28,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db.supabase import supabase
-from app.services import mailer
+from app.services import mailer, password_policy
 
 router = APIRouter()
 
@@ -37,7 +37,6 @@ CODE_TTL_MINUTES = 10
 MAX_ATTEMPTS = 5
 # Sends allowed per address per hour, across both purposes.
 MAX_SENDS_PER_HOUR = 5
-MIN_PASSWORD = 6
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.getenv("SUPABASE_KEY", "")
@@ -64,6 +63,31 @@ def _admin_headers() -> dict:
         "Authorization": f"Bearer {SERVICE_KEY}",
         "Content-Type": "application/json",
     }
+
+
+def _password_is_current(email: str, password: str) -> bool:
+    """True when `password` is already this account's password.
+
+    Supabase never exposes the stored hash, so the only honest way to ask is to
+    try signing in with the candidate. A success means the user has typed the
+    password they already have, which a reset should refuse rather than
+    silently accept as a change.
+
+    A failure here is not proof of anything else — the account could be locked
+    or the API down — so callers treat False as "carry on", never as a verdict.
+    """
+    try:
+        resp = requests.post(
+            f"{SUPABASE_URL}/auth/v1/token",
+            params={"grant_type": "password"},
+            headers={"apikey": SERVICE_KEY, "Content-Type": "application/json"},
+            json={"email": email, "password": password},
+            timeout=20,
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"otp: same-password check could not run: {e}")
+        return False
+    return resp.status_code == 200
 
 
 def _find_user(email: str) -> dict | None:
@@ -247,8 +271,11 @@ async def verify_signup(payload: VerifySignup):
     request, so a pending signup never parks a plaintext password anywhere.
     """
     email = (payload.email or "").strip().lower()
-    if len(payload.password or "") < MIN_PASSWORD:
-        raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD} characters.")
+    problem = password_policy.describe_failure(payload.password or "")
+    if problem:
+        # Checked before the code is spent, so a weak password does not cost
+        # the user their one-shot code.
+        raise HTTPException(status_code=400, detail=problem)
 
     _consume(email, "signup", (payload.code or "").strip())
 
@@ -297,8 +324,17 @@ class VerifyRecovery(BaseModel):
 async def verify_recovery(payload: VerifyRecovery):
     """Confirm the code, then set the new password."""
     email = (payload.email or "").strip().lower()
-    if len(payload.password or "") < MIN_PASSWORD:
-        raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD} characters.")
+    problem = password_policy.describe_failure(payload.password or "")
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+    # Before spending the code: a reset that sets the password back to what it
+    # already was is not a reset, and reporting success would be a lie.
+    if _password_is_current(email, payload.password):
+        raise HTTPException(
+            status_code=400,
+            detail="That is already your current password. Choose a different one.",
+        )
 
     _consume(email, "recovery", (payload.code or "").strip())
 

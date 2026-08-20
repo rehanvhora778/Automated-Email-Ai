@@ -5,9 +5,10 @@ import { supabase } from './supabaseClient';
 import { startGoogleAuth } from './lib/googleAuth';
 import { AuthShell, GoogleButton, OrDivider, authInputClass } from './components/auth/AuthShell';
 import { requestOtp, verifySignupCode, otpErrorMessage } from './lib/otpApi';
+import { PasswordChecklist } from './components/auth/PasswordChecklist';
+import { passwordIsValid } from './lib/passwordPolicy';
 import { OtpInput } from './components/auth/OtpInput';
 
-const MIN_PASSWORD = 6;
 const OTP_LENGTH = 6;
 // Supabase's OTP length is a project setting; accept whatever it issues so a
 // project configured for 8 digits is not silently unenterable.
@@ -75,8 +76,8 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
       toast.error('Enter a valid email address.');
       return false;
     }
-    if (password.length < MIN_PASSWORD) {
-      toast.error(`Password must be at least ${MIN_PASSWORD} characters.`);
+    if (!passwordIsValid(password)) {
+      toast.error('Your password does not meet all the requirements listed.');
       return false;
     }
     return true;
@@ -281,7 +282,7 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={`Password (min. ${MIN_PASSWORD} characters)`}
+            placeholder="Password"
             autoComplete="new-password"
             className={authInputClass}
           />
@@ -294,6 +295,8 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
+
+        <PasswordChecklist value={password} />
 
         <button
           type="submit"

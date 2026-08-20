@@ -367,6 +367,14 @@ unauthenticated route straight around the verification everyone else goes throug
 password travels with that same call rather than being parked anywhere while the code is
 outstanding.
 
+**Password rules** live in `backend/app/services/password_policy.py` and are enforced there
+on both signup and reset: at least 8 characters with an uppercase letter, a lowercase
+letter, a number and a special character. `frontend/src/lib/passwordPolicy.ts` mirrors them
+so the screens can tick the requirements off live; the backend copy is the one that
+decides. A reset also refuses a password the account already has — Supabase exposes no way
+to compare against the stored hash, so it asks the only question available and tries to
+sign in with the candidate first.
+
 > **Why the app asks for Gmail permissions at sign-in.** The frontend requests the Gmail
 > scopes in `signInWithOAuth` with `access_type=offline` and `prompt=consent`. Google then
 > returns a refresh token, Supabase exposes it on the session as `provider_refresh_token`,
