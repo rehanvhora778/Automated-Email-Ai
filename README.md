@@ -340,6 +340,13 @@ To switch to codes, replace the body with something that includes the token:
 <p>This code expires in 1 hour. Ignore this email if you did not request it.</p>
 ```
 
+**d. Supabase Dashboard** → *Authentication → Providers → Email → Email OTP Length*
+
+Set this to **6** so it matches the six boxes on screen. It is a per-project setting and
+not always 6 by default — a project issuing 8-digit codes into a 6-box field produces a
+code that cannot be entered, with nothing on screen explaining why. The field grows to fit
+a longer *pasted* code as a safety net, but matching the setting is the real fix.
+
 > **Heads-up on rate limits.** Supabase's built-in email sender is capped at a couple of
 > messages per hour on the free tier, which is fine while developing but will block a live
 > demo. For anything beyond testing, add your own SMTP under
@@ -392,6 +399,17 @@ Verify at any time with:
 ```bash
 curl -s "https://<your-project-ref>.supabase.co/auth/v1/settings"   -H "apikey: <anon-key>" | grep -o '"google":[a-z]*'
 ```
+
+### A confirmation link arrives instead of a code
+
+The *Confirm signup* template still uses `{{ .ConfirmationURL }}`. Replace it with
+`{{ .Token }}` — see step 5b. The link does work (it confirms the address and signs the
+user in), but it cannot be typed into the six boxes the screen is showing.
+
+### The code is the wrong length to enter
+
+*Authentication → Providers → Email → Email OTP Length* is not 6 — see step 5d. Pasting
+still works, since the field grows to fit, but typing runs out of boxes.
 
 ### No code arrives when signing up with email
 

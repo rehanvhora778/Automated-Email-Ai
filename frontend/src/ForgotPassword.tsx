@@ -8,6 +8,9 @@ import { setRecovering } from './lib/recoverySession';
 
 const MIN_PASSWORD = 6;
 const OTP_LENGTH = 6;
+// Supabase's OTP length is a project setting; accept whatever it issues so a
+// project configured for 8 digits is not silently unenterable.
+const MIN_OTP = 6;
 const RESEND_COOLDOWN_SECONDS = 60;
 
 /**
@@ -123,7 +126,7 @@ export default function ForgotPassword({
   // ---------- step 2: check the code ----------
   const handleVerify = async (submitted?: string) => {
     const token = (submitted ?? code).trim();
-    if (verifying || token.length !== OTP_LENGTH) return;
+    if (verifying || token.length < MIN_OTP) return;
 
     // Raise the flag *before* verifying: a correct code signs the user in, and
     // App would otherwise replace this screen with the dashboard right here.
@@ -306,7 +309,7 @@ export default function ForgotPassword({
         <button
           type="button"
           onClick={() => handleVerify()}
-          disabled={verifying || code.length !== OTP_LENGTH}
+          disabled={verifying || code.length < MIN_OTP}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient px-6 py-3.5 text-sm font-bold text-white shadow-glow transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {verifying ? (

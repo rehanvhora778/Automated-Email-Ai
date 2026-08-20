@@ -8,6 +8,9 @@ import { OtpInput } from './components/auth/OtpInput';
 
 const MIN_PASSWORD = 6;
 const OTP_LENGTH = 6;
+// Supabase's OTP length is a project setting; accept whatever it issues so a
+// project configured for 8 digits is not silently unenterable.
+const MIN_OTP = 6;
 const RESEND_COOLDOWN_SECONDS = 60;
 
 /**
@@ -116,7 +119,7 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
 
   const handleVerify = async (submitted?: string) => {
     const token = (submitted ?? code).trim();
-    if (verifying || token.length !== OTP_LENGTH) return;
+    if (verifying || token.length < MIN_OTP) return;
 
     setVerifying(true);
     const { error } = await supabase.auth.verifyOtp({
@@ -192,7 +195,7 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
         <button
           type="button"
           onClick={() => handleVerify()}
-          disabled={verifying || code.length !== OTP_LENGTH}
+          disabled={verifying || code.length < MIN_OTP}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient px-6 py-3.5 text-sm font-bold text-white shadow-glow transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {verifying ? (
