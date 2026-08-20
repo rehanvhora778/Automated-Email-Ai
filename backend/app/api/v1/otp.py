@@ -171,10 +171,12 @@ async def request_code(payload: OtpRequest):
     except mailer.MailerNotConfigured as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        print(f"otp: send failed: {e}")
+        print(f"otp: send failed: {type(e).__name__}: {e}")
+        # Say what the mail server actually objected to. A generic failure here
+        # leaves no way to tell a wrong app password from a blocked port.
         raise HTTPException(
             status_code=502,
-            detail="The verification email could not be sent. Check the server's SMTP settings.",
+            detail=f"The verification email could not be sent — {type(e).__name__}: {e}",
         )
 
     try:
@@ -329,6 +331,22 @@ async def verify_recovery(payload: VerifyRecovery):
 
 
 @router.get("/health")
-async def health():
-    """Whether this deployment can actually send mail, without revealing config."""
-    return {"smtp_configured": mailer.is_configured()}
+async def health(check: bool = False):
+    """Whether this deployment can send mail, without revealing config.
+
+    `?check=true` also opens a real connection and authenticates, reporting what
+    the mail server said. Nothing is sent and no credential is echoed back.
+    """
+    result = {
+        "smtp_configured": mailer.is_configured(),
+        "smtp_host": mailer.SMTP_HOST or None,
+        "smtp_port": mailer.SMTP_PORT,
+        "starttls": mailer.SMTP_STARTTLS,
+        # Enough to spot a typo without disclosing the address in full.
+        "smtp_user_domain": (mailer.SMTP_USER.split("@")[-1] if "@" in mailer.SMTP_USER else None),
+    }
+    if check:
+        ok, detail = mailer.check_connection()
+        result["connection_ok"] = ok
+        result["detail"] = detail
+    return result

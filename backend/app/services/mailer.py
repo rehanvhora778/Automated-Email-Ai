@@ -119,6 +119,38 @@ def send_otp(to: str, code: str, purpose: str) -> None:
     send_email(to, subject, text_body, html_body)
 
 
+def check_connection() -> tuple[bool, str]:
+    """Connect and authenticate without sending, for diagnostics.
+
+    Returns (ok, detail). The detail is the server's own words on failure —
+    "Username and Password not accepted" and friends — which is the difference
+    between a fixable report and a shrug. It never contains the password.
+    """
+    try:
+        _require_config()
+    except MailerNotConfigured as e:
+        return False, str(e)
+
+    context = ssl.create_default_context()
+    try:
+        if SMTP_USE_SSL:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=15) as server:
+                server.login(SMTP_USER, SMTP_PASSWORD)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.ehlo()
+                if SMTP_STARTTLS:
+                    server.starttls(context=context)
+                    server.ehlo()
+                server.login(SMTP_USER, SMTP_PASSWORD)
+    except smtplib.SMTPAuthenticationError as e:
+        detail = e.smtp_error.decode(errors="replace") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+        return False, f"Authentication rejected by {SMTP_HOST}: {detail}"
+    except (OSError, smtplib.SMTPException) as e:
+        return False, f"{type(e).__name__}: {e}"
+    return True, "Connected and authenticated."
+
+
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
