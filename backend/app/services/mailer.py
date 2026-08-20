@@ -4,11 +4,17 @@ This is only for mail the *system* sends about itself — verification codes and
 the like. Mail sent on a user's behalf still goes through the Gmail API in
 gmail_service, so it appears in their Sent folder under their own address.
 
-Three transports, picked by whichever credential is present:
+Four transports, picked by whichever credential is present, in this order:
 
-  * **Resend**  — `RESEND_API_KEY`
-  * **Brevo**   — `BREVO_API_KEY`
-  * **SMTP**    — `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM`
+  * **Resend**     — `RESEND_API_KEY`
+  * **Brevo**      — `BREVO_API_KEY`
+  * **Gmail API**  — a linked Gmail account already stored in `profiles`
+  * **SMTP**       — `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM`
+
+Gmail API outranks SMTP deliberately. This is a Gmail application, so a
+send-scoped token is usually already on hand, and it reaches Google over HTTPS
+rather than a port the host is likely to block — which makes it the transport
+that works with no extra account anywhere. `EMAIL_PROVIDER` overrides the order.
 
 SMTP is the obvious choice and the wrong default on much of today's hosting.
 Render's free tier — and many other PaaS providers — block outbound connections
@@ -20,6 +26,7 @@ that permit it.
 """
 import os
 import re
+import base64
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -29,6 +36,10 @@ import requests
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
+# Which linked account sends system mail. Unset, the oldest profile holding a
+# send-scoped token is used — deterministic, so the sender does not drift as
+# new people sign up.
+MAIL_GMAIL_PROFILE_ID = os.getenv("MAIL_GMAIL_PROFILE_ID", "").strip()
 
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587") or 587)
@@ -54,15 +65,90 @@ class MailerNotConfigured(RuntimeError):
     """Raised when no transport is configured."""
 
 
+_gmail_sender_cache: dict | None = None
+
+
+def _gmail_candidates() -> list[dict]:
+    """Every stored token that could plausibly send, oldest profile first.
+
+    Ordered rather than arbitrary so the sending address is stable as people
+    sign up, and so an explicit MAIL_GMAIL_PROFILE_ID always wins.
+    """
+    try:
+        from app.db.supabase import supabase
+
+        query = supabase.from_("profiles").select("id, full_name, gmail_token")
+        if MAIL_GMAIL_PROFILE_ID:
+            query = query.eq("id", MAIL_GMAIL_PROFILE_ID)
+        rows = query.order("created_at").execute().data or []
+    except Exception as e:
+        print(f"mailer: could not look up a Gmail sender: {e}")
+        return []
+
+    out = []
+    for row in rows:
+        token = row.get("gmail_token") or {}
+        # A refresh token is what makes this durable; without the send scope
+        # Google rejects the call regardless.
+        if token.get("refresh_token") and "gmail.send" in (token.get("scope") or ""):
+            out.append({"id": row["id"], "name": row.get("full_name"), "token": token})
+    return out
+
+
+def gmail_sender(validate: bool = False) -> dict | None:
+    """The stored token this deployment sends system mail through, or None.
+
+    Having a refresh token on file does not mean it still works — users revoke
+    access, and Google expires grants on unverified apps. With `validate` the
+    candidates are tried in turn and the first one Google still accepts is
+    chosen, so one dead token does not take email down while a live one sits
+    behind it. Resolved once per process; the answer only changes when someone
+    links or unlinks an account.
+    """
+    global _gmail_sender_cache
+    if _gmail_sender_cache is not None:
+        return _gmail_sender_cache or None
+
+    candidates = _gmail_candidates()
+    if not candidates:
+        _gmail_sender_cache = {}
+        return None
+
+    if not validate:
+        # Cheap path for "is this transport available at all".
+        return candidates[0]
+
+    from app.services.gmail_service import build_user_gmail_service
+
+    for candidate in candidates:
+        service = build_user_gmail_service(candidate["token"])
+        if service is None:
+            continue
+        try:
+            profile = service.users().getProfile(userId="me").execute()
+        except Exception as e:
+            print(f"mailer: token for {candidate['id'][:8]} unusable: {e}")
+            continue
+        candidate["address"] = profile.get("emailAddress")
+        _gmail_sender_cache = candidate
+        return candidate
+
+    print("mailer: every stored Gmail token was rejected")
+    _gmail_sender_cache = {}
+    return None
+
+
 def active_provider() -> str:
     """Which transport will be used: 'resend', 'brevo', 'smtp' or 'none'."""
     forced = os.getenv("EMAIL_PROVIDER", "").strip().lower()
-    if forced in {"resend", "brevo", "smtp"}:
+    if forced in {"resend", "brevo", "gmail_api", "smtp"}:
         return forced
     if RESEND_API_KEY:
         return "resend"
     if BREVO_API_KEY:
         return "brevo"
+    if gmail_sender():
+        return "gmail_api"
     if SMTP_HOST and SMTP_USER and SMTP_PASSWORD and SMTP_FROM:
         return "smtp"
     return "none"
@@ -72,6 +158,8 @@ def is_configured() -> bool:
     provider = active_provider()
     if provider in {"resend", "brevo"}:
         return bool(MAIL_FROM)
+    if provider == "gmail_api":
+        return gmail_sender() is not None
     if provider == "smtp":
         return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD and SMTP_FROM)
     return False
@@ -86,6 +174,11 @@ def _require_config() -> None:
         )
     if provider in {"resend", "brevo"} and not MAIL_FROM:
         raise MailerNotConfigured(f"{provider} is configured but MAIL_FROM is not set.")
+    if provider == "gmail_api" and not gmail_sender():
+        raise MailerNotConfigured(
+            "No linked Gmail account with send permission is available to send from. "
+            "Link Gmail from Settings, or configure BREVO_API_KEY / RESEND_API_KEY."
+        )
     if provider == "smtp":
         missing = [
             name
@@ -151,11 +244,49 @@ def _send_brevo(to: str, subject: str, text_body: str, html_body: str | None) ->
         raise MailSendError(f"Brevo rejected the message ({resp.status_code}): {resp.text[:300]}")
 
 
+def _send_gmail_api(to: str, subject: str, text_body: str, html_body: str | None) -> None:
+    """Send through the Gmail API, as the linked account.
+
+    HTTPS to googleapis.com, so it survives hosts that block the SMTP ports.
+    google-auth refreshes the access token on the first call, so an expired one
+    in the stored blob is not a problem.
+    """
+    sender = gmail_sender(validate=True)
+    if not sender:
+        raise MailSendError(
+            "Every linked Gmail account was rejected by Google — re-link Gmail from "
+            "Settings, or configure BREVO_API_KEY / RESEND_API_KEY."
+        )
+
+    from app.services.gmail_service import build_user_gmail_service
+
+    service = build_user_gmail_service(sender["token"])
+    if service is None:
+        raise MailSendError("Google client credentials are not configured on the server.")
+
+    message = EmailMessage()
+    message["To"] = to
+    message["Subject"] = subject
+    # No From header: the Gmail API sends as the authenticated account, and a
+    # mismatched From is rejected outright.
+    message.set_content(text_body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    try:
+        service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    except Exception as e:
+        raise MailSendError(f"Gmail API rejected the message: {e}")
+
+
 def send_email(to: str, subject: str, text_body: str, html_body: str | None = None) -> None:
     """Send one message. Raises on failure so callers can report it honestly."""
     _require_config()
 
     provider = active_provider()
+    if provider == "gmail_api":
+        return _send_gmail_api(to, subject, text_body, html_body)
     if provider == "resend":
         return _send_resend(to, subject, text_body, html_body)
     if provider == "brevo":
@@ -235,6 +366,15 @@ def check_connection() -> tuple[bool, str]:
         return False, str(e)
 
     provider = active_provider()
+    if provider == "gmail_api":
+        sender = gmail_sender(validate=True)
+        if not sender:
+            return False, (
+                "No linked Gmail account was accepted by Google. Re-link Gmail from "
+                "Settings, or set BREVO_API_KEY / RESEND_API_KEY."
+            )
+        return True, f"Sending as {sender.get('address')}."
+
     if provider in {"resend", "brevo"}:
         url, headers = (
             ("https://api.resend.com/domains", {"Authorization": f"Bearer {RESEND_API_KEY}"})

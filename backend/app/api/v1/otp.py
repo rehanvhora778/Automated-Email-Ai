@@ -352,4 +352,7 @@ async def health(check: bool = False):
         ok, detail = mailer.check_connection()
         result["connection_ok"] = ok
         result["detail"] = detail
+        if mailer.active_provider() == "gmail_api":
+            sender = mailer.gmail_sender()
+            result["mail_from"] = (sender or {}).get("address") or result.get("mail_from")
     return result
