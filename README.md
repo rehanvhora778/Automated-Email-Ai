@@ -322,11 +322,16 @@ token:
 <p>This code expires in 1 hour.</p>
 ```
 
-**c. Supabase Dashboard** → *Authentication → Email Templates → Reset password*
+**c. Supabase Dashboard** → *Authentication → Email Templates → Reset password* — optional
 
-The "Forgot password?" flow on the sign-in screen uses the same code-based approach, and
-this template has the same default problem — it sends a link, not a code. Replace the body
-with something that includes the token:
+The "Forgot password?" flow works either way, so this one is a preference rather than a
+requirement. The stock template sends a **link**: clicking it returns to the app with a
+recovery session, which the app detects and answers by opening the "choose a new password"
+screen directly. Adding `{{ .Token }}` instead sends a **code**, which keeps the whole
+reset inside the tab the user started in — better when the link would otherwise open in a
+different browser than the one they were using.
+
+To switch to codes, replace the body with something that includes the token:
 
 ```html
 <h2>Reset your password</h2>
@@ -397,9 +402,14 @@ hour on the free tier.
 
 ### The password reset email has a link instead of a code
 
-The *Reset password* template still uses `{{ .ConfirmationURL }}`. Add `{{ .Token }}` to it
-— see step 5c above. The six-digit boxes on the reset screen expect a code, so a link
-cannot be entered there.
+That is the stock template, and the app handles it: clicking the link returns you to the
+app already signed in for recovery, and the reset screen opens straight at "Set a new
+password". Prefer a six-digit code instead? Add `{{ .Token }}` to the *Reset password*
+template — see step 5c above.
+
+Note the link obeys Supabase's **URL Configuration → Redirect URLs**: the app asks to come
+back to the origin it was opened from, so the deployed URL has to be on that allow-list or
+Supabase falls back to the Site URL.
 
 ---
 

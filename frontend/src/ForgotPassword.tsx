@@ -25,10 +25,19 @@ const RESEND_COOLDOWN_SECONDS = 60;
  */
 type Step = 'email' | 'code' | 'password';
 
-export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () => void }) {
-  const [step, setStep] = useState<Step>('email');
+export default function ForgotPassword({
+  onBackToLogin,
+  startAtPassword = false,
+}: {
+  onBackToLogin: () => void;
+  /** Set when the user arrived by clicking the emailed reset link, which has
+   *  already proved ownership of the address — only the password is left. */
+  startAtPassword?: boolean;
+}) {
+  const [step, setStep] = useState<Step>(startAtPassword ? 'password' : 'email');
 
   const [email, setEmail] = useState('');
+  const [linkEmail, setLinkEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -40,6 +49,8 @@ export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () =>
   const [cooldown, setCooldown] = useState(0);
 
   const cleanEmail = email.trim().toLowerCase();
+  // Arriving by link means no address was typed — read it off the session.
+  const shownEmail = cleanEmail || linkEmail;
 
   // Supabase rate-limits recovery mail; the countdown keeps people from
   // burning the quota by hammering the button.
@@ -52,6 +63,22 @@ export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () =>
   // Abandoning the flow half-way (browser back, a stray click on "Sign in")
   // must not leave the gate propped open forever.
   useEffect(() => () => setRecovering(false), []);
+
+  // `useState` only reads its initial value on mount, so a screen that is
+  // already open when the recovery link resolves would sit on the email step
+  // forever. Move it explicitly whenever the flag turns on.
+  useEffect(() => {
+    if (startAtPassword) setStep('password');
+  }, [startAtPassword]);
+
+  // The link path never asked for an address, so take it from the session the
+  // link established — purely so the screen can name the account being changed.
+  useEffect(() => {
+    if (!startAtPassword) return;
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) setLinkEmail(data.user.email);
+    });
+  }, [startAtPassword]);
 
   const leave = () => {
     setRecovering(false);
@@ -69,7 +96,12 @@ export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () =>
     }
 
     setSending(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+    // redirectTo matters when the project's template sends a link rather than
+    // a code: without it Supabase falls back to the Site URL, which may be a
+    // different environment than the one the user is standing in.
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: window.location.origin,
+    });
     setSending(false);
 
     if (error) {
@@ -120,7 +152,9 @@ export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () =>
 
   const handleResend = async () => {
     if (cooldown > 0) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: window.location.origin,
+    });
     if (error) {
       toast.error(
         /rate|limit|security/i.test(error.message)
@@ -173,9 +207,9 @@ export default function ForgotPassword({ onBackToLogin }: { onBackToLogin: () =>
         title="Set a new password"
         subtitle={
           <>
-            Code confirmed for{' '}
-            <span className="font-semibold text-neutral-200">{cleanEmail}</span>. Choose a
-            new password and you&apos;ll be signed straight in.
+            {startAtPassword ? 'Reset link confirmed' : 'Code confirmed'} for{' '}
+            <span className="font-semibold text-neutral-200">{shownEmail || 'your account'}</span>.
+            Choose a new password and you&apos;ll be signed straight in.
           </>
         }
         footer={<span className="text-neutral-600">Almost done — this is the last step.</span>}

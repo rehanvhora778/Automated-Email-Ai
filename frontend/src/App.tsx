@@ -18,7 +18,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { CopilotViewName } from './CopilotView';
 import type { ToolAction } from './lib/types';
 import { API_URL } from './lib/api';
-import { useIsRecovering } from './lib/recoverySession';
+import { useIsRecovering, beginLinkRecovery } from './lib/recoverySession';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 
@@ -111,6 +111,10 @@ function App() {
       if (session?.user) fetchConversations(session.user.id);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Following the emailed reset link lands here with a live session and
+      // this event. Without catching it the user is dropped on the dashboard
+      // still holding the password they came here to change.
+      if (_event === 'PASSWORD_RECOVERY') beginLinkRecovery();
       setUser(session?.user ?? null);
       if (session?.user) fetchConversations(session.user.id);
       // Google's tokens ride along on the session for exactly one moment after
