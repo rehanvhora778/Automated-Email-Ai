@@ -113,7 +113,7 @@ async def agent_run(req: AgentRequest):
                 detail = ""
                 try:
                     if key == "read" and intent == "summarize_inbox" and service:
-                        records, unread_count = inbox_reader.read_inbox(service, max_results=25)
+                        records, unread_count = inbox_reader.read_inbox(service)
                         detail = f"Read {len(records)} emails"
                     elif key == "analyze" and intent == "summarize_inbox" and records is not None:
                         briefing = inbox_briefing.analyze_records(ai, records, unread_count, user_name)

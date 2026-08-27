@@ -444,7 +444,7 @@ def _plain_overview(briefing):
     return " ".join(parts)
 
 
-def build_briefing(service, ai, user_name="there", max_results=25):
+def build_briefing(service, ai, user_name="there", max_results=inbox_reader.DEFAULT_ANALYZE):
     """Read the inbox and return the full briefing. Read-only end to end."""
     records, unread_count = inbox_reader.read_inbox(service, max_results=max_results)
     return analyze_records(ai, records, unread_count, user_name)

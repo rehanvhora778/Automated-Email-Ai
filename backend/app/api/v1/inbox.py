@@ -15,6 +15,7 @@ from app.db.supabase import supabase
 from app.services.ai_service import SecretaryAI
 from app.services.gmail_service import build_user_gmail_service
 from app.services.inbox_briefing import build_briefing
+from app.services.inbox_reader import DEFAULT_ANALYZE
 
 router = APIRouter()
 ai = SecretaryAI()
@@ -85,12 +86,13 @@ class InboxActionRequest(BaseModel):
 
 
 @router.get("/summary")
-async def inbox_summary(user_id: str, max_results: int = 25):
+async def inbox_summary(user_id: str, max_results: int = DEFAULT_ANALYZE):
     """Classify the unread inbox and return a decision-ready briefing.
 
-    `max_results` caps how many unread messages are analysed in one pass; the
-    response's `scope` block reports how many were covered out of the mailbox
-    total so the UI never implies more was read than actually was.
+    `max_results` caps how many unread messages are analysed in one pass, and
+    is the dial to turn if the briefing feels slow. The response's `scope`
+    block reports how many were covered out of the mailbox total, so the UI
+    never implies more was read than actually was.
     """
     service, user_name, linked = _load_gmail(user_id)
     if not linked:

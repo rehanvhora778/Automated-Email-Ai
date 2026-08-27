@@ -35,6 +35,13 @@ CATEGORY_NAMES = {
     "CATEGORY_FORUMS": "Forums",
 }
 
+# How many unread messages one briefing covers by default, and the ceiling a
+# caller may ask for. Lower is faster: it shrinks the metadata fetch and, more
+# importantly, the pool of messages whose bodies clear the read threshold
+# below — which is what dominates the analysis time.
+DEFAULT_ANALYZE = 15
+MAX_ANALYZE = 50
+
 # Keep at least this many messages in a briefing: with 2 unread emails the
 # newest read mail is still useful context for "what is going on in here".
 MIN_CONTEXT = 8
@@ -314,14 +321,14 @@ def _need_body_score(rec):
     return score
 
 
-def read_inbox(service, max_results=25, top_up=True):
+def read_inbox(service, max_results=DEFAULT_ANALYZE, top_up=True):
     """Collect the evidence a briefing needs. Returns (records, unread_total).
 
     Unread mail comes first and is what the briefing is about; when there is
     very little of it the newest read messages are added so the picture still
     makes sense. Records come back newest first.
     """
-    max_results = max(1, min(int(max_results or 25), 50))
+    max_results = max(1, min(int(max_results or DEFAULT_ANALYZE), MAX_ANALYZE))
     ids = _list_ids(service, "in:inbox is:unread", max_results)
     unread_ids = set(ids)
 
