@@ -48,7 +48,11 @@ MIN_CONTEXT = 8
 
 # Full bodies are fetched only for the messages whose classification actually
 # depends on the body. Bulk mail is grouped from sender + subject alone.
-BODY_BUDGET = 12
+# Bodies are most of what the model reads, so this is the tightest dial on
+# analysis time. Delivery notices do not count against it: they are parsed
+# rather than analysed, and a bouncy inbox should not eat the budget meant
+# for real mail.
+BODY_BUDGET = 8
 BODY_CHARS = 1400
 
 # Gmail batches cap at 100 sub-requests.
@@ -357,11 +361,19 @@ def assign_refs(records):
 
 
 def _attach_bodies(service, records):
-    """Fetch and attach full text for the messages that need it (one batch)."""
+    """Fetch and attach full text for the messages that need it (one batch).
+
+    Delivery notices are fetched outside the budget. They need the full
+    payload to be parsed at all, and they are cheap to handle, so letting them
+    compete for the slots meant for real mail would mean a morning of bounces
+    quietly costing the briefing its actual analysis.
+    """
     ranked = sorted(records, key=_need_body_score, reverse=True)
-    wanted = [r for r in ranked if _need_body_score(r) > 20][:BODY_BUDGET]
-    wanted_ids = {r["id"] for r in wanted}
-    wanted += [r for r in ranked if r["bounce_candidate"] and r["id"] not in wanted_ids]
+    bounces = [r for r in ranked if r["bounce_candidate"]]
+    wanted = bounces + [
+        r for r in ranked
+        if not r["bounce_candidate"] and _need_body_score(r) > 20
+    ][:BODY_BUDGET]
     if not wanted:
         return
 
