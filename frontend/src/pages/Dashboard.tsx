@@ -40,9 +40,9 @@ export function Dashboard({
 
   const statCards = [
     { label: "Unread Emails", value: stats?.unread ?? 0, icon: <Mail size={20} />, desc: "in your inbox", accent: "from-indigo-500/40 to-blue-500/30" },
-    { label: "High Priority", value: stats?.high_priority ?? 0, icon: <Star size={20} />, desc: "need attention", accent: "from-rose-500/40 to-pink-500/30" },
-    { label: "Pending Follow-ups", value: stats?.pending_followups ?? 0, icon: <ListChecks size={20} />, desc: "awaiting a reply", accent: "from-emerald-500/40 to-teal-500/30" },
-    { label: "Emails Analyzed", value: stats?.total ?? 0, icon: <Inbox size={20} />, desc: "in this briefing", accent: "from-amber-500/40 to-orange-500/30" },
+    { label: "High Priority", value: stats?.high_priority ?? 0, icon: <Star size={20} />, desc: "urgent or critical", accent: "from-rose-500/40 to-pink-500/30" },
+    { label: "Awaiting Your Reply", value: stats?.needs_reply ?? 0, icon: <ListChecks size={20} />, desc: "someone is waiting", accent: "from-emerald-500/40 to-teal-500/30" },
+    { label: "Emails Analyzed", value: stats?.analyzed ?? 0, icon: <Inbox size={20} />, desc: "in this briefing", accent: "from-amber-500/40 to-orange-500/30" },
   ];
 
   const handleQuickAction = (key: QuickActionKey) => {
@@ -100,9 +100,10 @@ export function Dashboard({
               <SectionHeader title="Inbox Composition" icon={<PieIcon size={16} />} />
               <GlassCard className="p-6">
                 <InboxBreakdownChart
-                  important={data?.important?.length ?? 0}
-                  newsletters={data?.newsletters?.count ?? 0}
-                  promotions={data?.spam?.count ?? 0}
+                  needsAttention={data?.emails?.length ?? 0}
+                  newsletters={data?.counts?.newsletters ?? 0}
+                  promotions={data?.counts?.promotional ?? 0}
+                  lowPriority={data?.counts?.low_priority ?? 0}
                 />
               </GlassCard>
             </div>

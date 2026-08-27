@@ -1,19 +1,22 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
-/** Donut chart of the current inbox composition — driven by real summary counts. */
+/** Donut chart of the current inbox composition — driven by real briefing counts. */
 export function InboxBreakdownChart({
-  important,
+  needsAttention,
   newsletters,
   promotions,
+  lowPriority,
 }: {
-  important: number;
+  needsAttention: number;
   newsletters: number;
   promotions: number;
+  lowPriority: number;
 }) {
   const data = [
-    { name: "Important", value: important, color: "#6366f1" },
+    { name: "Needs attention", value: needsAttention, color: "#6366f1" },
     { name: "Newsletters", value: newsletters, color: "#22d3ee" },
     { name: "Promotions", value: promotions, color: "#f59e0b" },
+    { name: "Low priority", value: lowPriority, color: "#64748b" },
   ].filter((d) => d.value > 0);
 
   const total = data.reduce((s, d) => s + d.value, 0);

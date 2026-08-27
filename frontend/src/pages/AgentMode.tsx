@@ -12,6 +12,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Markdown } from "../components/ui/Markdown";
 import { ErrorState } from "../components/ui/ErrorState";
+import { InboxBriefingView } from "../components/inbox/InboxBriefing";
 import { cn } from "../lib/cn";
 
 const STEP_ICON: Record<string, ReactNode> = {
@@ -269,6 +270,13 @@ export function AgentMode({
                   <Send size={15} /> Review &amp; Send
                 </Button>
               </div>
+            </GlassCard>
+          ) : result.briefing ? (
+            <GlassCard className="p-6">
+              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+                <Sparkles size={16} className="text-brand-400" /> Inbox briefing
+              </div>
+              <InboxBriefingView briefing={result.briefing} />
             </GlassCard>
           ) : result.summary ? (
             <GlassCard className="p-6">

@@ -26,37 +26,143 @@ export interface GenerateReplyPayload {
   styles?: ReplyStyle[];
 }
 
-export interface ImportantEmail {
+// ---- AI Inbox Briefing ----
+
+/** Cards are listed one by one; the rest is rolled up into groups. */
+export type EmailCategory =
+  | "Requires Action"
+  | "Requires Reply"
+  | "Important"
+  | "Needs Review"
+  | "Promotional"
+  | "Newsletter"
+  | "Low Priority";
+
+export type Urgency = "critical" | "high" | "medium" | "low";
+
+/**
+ * One analysed email. Sender, subject and date are re-attached from Gmail
+ * after the model answers, so they are always the real values; everything
+ * else is the model's judgement and may be empty when it had no basis for one.
+ */
+export interface BriefedEmail {
+  id: string;
+  thread_id: string;
+  ref: string;
+  category: EmailCategory;
   sender: string;
+  sender_email: string;
   subject: string;
-  insight: string;
+  date: string;
+  date_ms: number;
+  unread: boolean;
+  summary: string;
+  why_it_matters: string;
+  required_action: string;
+  urgency: Urgency;
+  needs_reply: boolean;
+  /** Only set when the model could quote the words that state it. */
+  deadline: string;
+  tags: string[];
+  /** Only set for "Needs Review": what was missing. */
+  review_reason: string;
 }
 
-export interface InboxSuggestion {
-  title: string;
-  type: "reply" | "follow_up" | "respond" | "thank_you" | string;
+/** Promotional / newsletter / low-priority mail, rolled up. */
+export interface BriefedGroup {
+  label: string;
+  category: EmailCategory;
+  count: number;
+  senders: string[];
+  subjects: string[];
+  note: string;
+}
+
+/** A bounce, parsed from the delivery status notification's own headers. */
+export interface DeliveryFailure {
+  message_id: string;
+  date: string;
+  date_ms: number;
+  reported_by: string;
+  failed_recipient: string;
+  original_subject: string;
+  /** SMTP enhanced status code, e.g. "5.1.1". Empty if the notice omitted it. */
+  status: string;
+  permanent: boolean | null;
+  reason: string;
+  what_to_do: string;
+  diagnostic: string;
+  notice_subject: string;
+}
+
+export type ActionType = "reply" | "action" | "review" | "read" | "cleanup" | "fix_delivery";
+
+export interface RecommendedAction {
+  priority: number;
+  action: string;
+  /** Why it is worth doing now — never empty; unexplained actions are dropped. */
+  reason: string;
+  urgency: Urgency;
+  type: ActionType;
+  refs: string[];
+  email_ids: string[];
+}
+
+export interface BriefingCounts {
+  analyzed: number;
+  needs_reply: number;
+  action_required: number;
+  important: number;
+  needs_review: number;
+  high_priority: number;
+  promotional: number;
+  newsletters: number;
+  low_priority: number;
+  grouped: number;
+  delivery_failures: number;
+}
+
+/** How much of the mailbox this briefing actually covers. */
+export interface BriefingScope {
+  analyzed: number;
+  unread_analyzed: number;
+  unread_total: number;
+  read_included: number;
+  /** True when there is more unread mail than this pass looked at. */
+  capped: boolean;
+  bodies_read: number;
+}
+
+export interface InboxBriefing {
+  overview: string;
+  emails: BriefedEmail[];
+  groups: BriefedGroup[];
+  delivery_failures: DeliveryFailure[];
+  recommended_actions: RecommendedAction[];
+  counts: BriefingCounts;
+  scope: BriefingScope;
+  /** True when the AI pass failed and only Gmail's own signals were used. */
+  degraded: boolean;
 }
 
 export interface InboxStats {
   unread: number;
+  analyzed: number;
   high_priority: number;
-  meetings_today: number;
-  pending_followups: number;
-  total: number;
+  needs_reply: number;
+  action_required: number;
+  delivery_failures: number;
+  grouped: number;
 }
 
-export interface InboxSummaryResponse {
+export interface InboxSummaryResponse extends Partial<InboxBriefing> {
   gmail_linked: boolean;
   needs_reauth?: boolean;
   error?: string;
   user_name: string;
   stats?: InboxStats;
+  /** Plain-text alias of `overview`. */
   summary?: string;
-  important?: ImportantEmail[];
-  spam?: { count: number; note: string };
-  newsletters?: { count: number; note: string };
-  action_items?: string[];
-  suggestions?: InboxSuggestion[];
 }
 
 export type ToolAction =
@@ -274,6 +380,8 @@ export interface AgentEvent {
   state?: "active" | "done";
   detail?: string;
   summary?: string;
+  /** Present on a summarize_inbox result — the same briefing the Inbox page shows. */
+  briefing?: InboxBriefing | null;
   answer?: string;
   draft?: AgentDraft | null;
   stats?: { archived?: number };

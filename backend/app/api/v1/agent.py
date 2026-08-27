@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from app.db.supabase import supabase, get_user_profile
 from app.services.ai_service import SecretaryAI
 from app.services.gmail_service import build_user_gmail_service
+from app.services import inbox_briefing, inbox_reader
 
 router = APIRouter()
 ai = SecretaryAI()
@@ -54,30 +55,6 @@ class AgentRequest(BaseModel):
 
 def _event(obj: dict) -> str:
     return json.dumps(obj) + "\n"
-
-
-def _header(headers, name, default=""):
-    for h in headers:
-        if h.get("name", "").lower() == name.lower():
-            return h.get("value", default)
-    return default
-
-
-def _read_inbox(service, n=15):
-    listing = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=n).execute()
-    emails = []
-    for m in listing.get("messages", []):
-        msg = service.users().messages().get(
-            userId="me", id=m["id"], format="metadata", metadataHeaders=["From", "Subject"],
-        ).execute()
-        headers = msg.get("payload", {}).get("headers", [])
-        emails.append({
-            "sender": _header(headers, "From"),
-            "subject": _header(headers, "Subject", "(no subject)"),
-            "snippet": msg.get("snippet", ""),
-            "unread": "UNREAD" in msg.get("labelIds", []),
-        })
-    return emails
 
 
 def _archive_promotions(service, n=25):
@@ -129,18 +106,21 @@ async def agent_run(req: AgentRequest):
                     print(f"agent: gmail build warning: {e}")
 
             summary_text, archived = "", 0
+            briefing, records, unread_count = None, None, 0
 
             for key, label in steps:
                 yield _event({"type": "step", "key": key, "state": "active"})
                 detail = ""
                 try:
                     if key == "read" and intent == "summarize_inbox" and service:
-                        emails = _read_inbox(service, 15)
-                        analysis = ai.summarize_inbox(emails, user_name)
-                        summary_text = analysis.get("summary", "")
-                        detail = f"Read {len(emails)} emails"
-                    elif key == "analyze" and intent == "summarize_inbox":
-                        detail = "Prioritized what matters"
+                        records, unread_count = inbox_reader.read_inbox(service, max_results=25)
+                        detail = f"Read {len(records)} emails"
+                    elif key == "analyze" and intent == "summarize_inbox" and records is not None:
+                        briefing = inbox_briefing.analyze_records(ai, records, unread_count, user_name)
+                        summary_text = briefing["overview"]
+                        counts = briefing["counts"]
+                        detail = (f"{counts['high_priority']} high priority · "
+                                  f"{len(briefing['recommended_actions'])} actions")
                     elif key == "read" and intent == "archive_promotions" and service:
                         detail = "Scanned promotions"
                     elif key == "archive" and intent == "archive_promotions" and service:
@@ -160,6 +140,7 @@ async def agent_run(req: AgentRequest):
                 "intent": intent,
                 "message": plan.get("message", ""),
                 "summary": summary_text,
+                "briefing": briefing,
                 "answer": plan.get("body", "") if intent == "general" else "",
                 "draft": draft,
                 "stats": {"archived": archived} if intent == "archive_promotions" else {},

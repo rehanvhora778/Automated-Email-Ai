@@ -1,14 +1,13 @@
-import { motion } from "framer-motion";
-import {
-  RefreshCw, Mail, MailWarning, Sparkles, Star, Newspaper, ListChecks, ShieldAlert,
-} from "lucide-react";
+import { RefreshCw, Mail, MailWarning, Sparkles, Inbox } from "lucide-react";
 import { useInboxSummary } from "../../lib/hooks";
+import type { InboxBriefing, InboxSummaryResponse } from "../../lib/types";
 import { GlassCard } from "../ui/GlassCard";
 import { Skeleton } from "../ui/Skeleton";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { ErrorState } from "../ui/ErrorState";
 import { SectionHeader } from "../ui/SectionHeader";
+import { InboxBriefingView } from "../inbox/InboxBriefing";
 
 function LoadingRows() {
   return (
@@ -22,6 +21,27 @@ function LoadingRows() {
   );
 }
 
+/** The response carries the briefing inline; fill in anything the API omitted. */
+export function toBriefing(data: InboxSummaryResponse): InboxBriefing {
+  return {
+    overview: data.overview ?? data.summary ?? "",
+    emails: data.emails ?? [],
+    groups: data.groups ?? [],
+    delivery_failures: data.delivery_failures ?? [],
+    recommended_actions: data.recommended_actions ?? [],
+    counts: data.counts ?? {
+      analyzed: 0, needs_reply: 0, action_required: 0, important: 0, needs_review: 0,
+      high_priority: 0, promotional: 0, newsletters: 0, low_priority: 0,
+      grouped: 0, delivery_failures: 0,
+    },
+    scope: data.scope ?? {
+      analyzed: 0, unread_analyzed: 0, unread_total: 0, read_included: 0,
+      capped: false, bodies_read: 0,
+    },
+    degraded: data.degraded ?? false,
+  };
+}
+
 export function InboxSummary({
   userId,
   onLinkGmail,
@@ -30,12 +50,23 @@ export function InboxSummary({
   onLinkGmail?: () => void;
 }) {
   const { data, isLoading, isError, error, refetch, isFetching } = useInboxSummary(userId);
+  const stats = data?.stats;
+  const briefing = data ? toBriefing(data) : null;
+  const isEmpty =
+    !!briefing &&
+    !briefing.emails.length &&
+    !briefing.groups.length &&
+    !briefing.delivery_failures.length;
 
   return (
     <GlassCard className="p-6">
       <SectionHeader
         title="AI Inbox Summary"
-        subtitle={data?.gmail_linked && data?.stats ? `${data.stats.total} recent · ${data.stats.unread} unread` : "Your inbox, briefed"}
+        subtitle={
+          data?.gmail_linked && stats
+            ? `${stats.unread} unread · ${stats.analyzed} analysed`
+            : "Your inbox, briefed"
+        }
         icon={<Sparkles size={16} />}
         action={
           data?.gmail_linked ? (
@@ -62,7 +93,7 @@ export function InboxSummary({
         <EmptyState
           icon={<Mail size={26} />}
           title="Connect Gmail to see your summary"
-          description="Link your Gmail account and AI will brief you on what's important, what needs a reply, and what's just noise."
+          description="Link your Gmail account and AI will classify every unread email — what needs a reply, what needs an action, what failed to send, and what's just noise."
           action={
             onLinkGmail ? (
               <Button onClick={onLinkGmail}>
@@ -84,79 +115,14 @@ export function InboxSummary({
             ) : undefined
           }
         />
+      ) : isEmpty ? (
+        <EmptyState
+          icon={<Inbox size={26} />}
+          title="Nothing waiting on you"
+          description={briefing?.overview || "No unread mail to report."}
+        />
       ) : (
-        <div className="space-y-6">
-          {/* Summary blurb */}
-          {data.summary && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-brand-500/20 bg-brand-500/[0.07] p-4"
-            >
-              <p className="text-sm leading-relaxed text-neutral-200">{data.summary}</p>
-            </motion.div>
-          )}
-
-          {/* Important */}
-          {!!data.important?.length && (
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-neutral-400">
-                <Star size={13} className="text-amber-400" /> Important
-              </div>
-              <div className="space-y-2">
-                {data.important.map((m, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="rounded-2xl border border-white/5 bg-white/[0.02] p-3"
-                  >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-sm font-semibold text-white">{m.subject}</span>
-                      <span className="shrink-0 truncate text-xs text-neutral-500">{m.sender}</span>
-                    </div>
-                    {m.insight && <p className="mt-1 text-xs text-neutral-400">{m.insight}</p>}
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Spam + Newsletters row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-              <ShieldAlert size={16} className="text-orange-400" />
-              <p className="mt-2 text-2xl font-bold text-white tabular-nums">{data.spam?.count ?? 0}</p>
-              <p className="text-xs text-neutral-500">{data.spam?.note || "Promotional / spam"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-              <Newspaper size={16} className="text-cyan-400" />
-              <p className="mt-2 text-2xl font-bold text-white tabular-nums">{data.newsletters?.count ?? 0}</p>
-              <p className="text-xs text-neutral-500">{data.newsletters?.note || "Newsletters"}</p>
-            </div>
-          </div>
-
-          {/* Action needed */}
-          {!!data.action_items?.length && (
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-neutral-400">
-                <ListChecks size={13} className="text-emerald-400" /> Action Needed
-              </div>
-              <div className="space-y-1.5">
-                {data.action_items.map((item, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2.5 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-sm text-neutral-300"
-                  >
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        briefing && <InboxBriefingView briefing={briefing} />
       )}
     </GlassCard>
   );

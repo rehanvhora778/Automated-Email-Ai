@@ -44,11 +44,17 @@ Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn mo
 
 ### 🧠 AI Agent Mode
 - Natural-language commands ("summarise my inbox", "clean up promotions", "draft a reply to…") are classified into intents and executed as an **animated, streamed step trace**.
-- Real tools: reads & summarises the inbox, archives promotional mail, drafts emails/replies/meeting invites.
+- Real tools: reads & summarises the inbox (returning the same full briefing the Inbox page shows), archives promotional mail, drafts emails/replies/meeting invites.
 - **Safety-first:** drafting intents return a draft for human review — the agent never sends on its own.
 
 ### 📥 Gmail Intelligence (all live data)
-- **AI Inbox Summary** — a structured briefing (what's important, what needs a reply, spam vs. newsletters, action items, suggestions).
+- **AI Inbox Briefing** — every unread email is classified individually as *Requires Action*, *Requires Reply*, *Important*, *Promotional*, *Newsletter*, *Low Priority* or *Needs Review*, then the briefing is assembled in priority order:
+  - Emails that matter get a card with sender, subject, date, a short summary, **why it matters**, the required action, an urgency band and whether a reply is owed — plus a deadline when the email actually states one.
+  - Promotional and newsletter mail is **grouped** ("9 retail sale offers from Myntra, Ajio, Amazon") instead of listed one by one.
+  - **Delivery failures are detected and explained** — which message bounced, to which address, the SMTP status, and what to do about it, all parsed from the notification's own headers rather than guessed.
+  - Ends with a ranked **Recommended Actions** list where every item states its reason.
+  - **Grounded by construction:** sender, subject and date are re-attached from Gmail after the model answers, invented references are dropped, and a stated deadline is kept only if the model can quote the words that state it. Anything ambiguous is marked *Needs Review* rather than guessed, and if the model is unreachable the briefing degrades to Gmail's own signals instead of failing.
+  - **Read-only:** summarizing never archives, deletes, replies or sends — those are separate, explicit actions.
 - **Inbox Center** — browse messages by real Gmail tabs (Primary, Social, Promotions, Updates, Forums, Important, Starred, Unread, Newsletters) with one-click **archive / trash / star / mark read / mark important** actions.
 - **Analytics** — exact 30-day sent/received volume, a 7-day daily trend, category mix, top senders and lifetime mailbox totals.
 - **Contacts** — the people you actually email, derived from your sent and received mail.
@@ -140,7 +146,7 @@ Base URL: `http://localhost:8000` · all routes are prefixed with `/api/v1`.
 | `GET`  | `/actions/history` | The user's last 10 chat queries |
 | `POST` | `/actions/send-email` | Send an email via Gmail (optional file attachment) |
 | `POST` | `/reply/generate` | Smart Reply — multiple styles from a pasted email |
-| `GET`  | `/inbox/summary` | AI structured inbox briefing + stats |
+| `GET`  | `/inbox/summary` | Per-email classified inbox briefing, grouped bulk mail, delivery failures + ranked actions (read-only) |
 | `GET`  | `/inbox/messages` | List messages for a tab (Gmail categories/views) |
 | `POST` | `/inbox/action` | Archive / trash / star / mark read / mark important |
 | `POST` | `/ai/tool` | Run an AI writing tool (adds an `ml` block for spam/phishing) |
@@ -178,6 +184,8 @@ Automated-Email-Ai/
 │   │   ├── services/
 │   │   │   ├── ai_service.py        # Mistral prompt logic (all AI features)
 │   │   │   ├── ml_service.py        # Trained spam classifier (local inference)
+│   │   │   ├── inbox_reader.py      # Read-only Gmail evidence + bounce parsing
+│   │   │   ├── inbox_briefing.py    # Briefing pipeline + grounding checks
 │   │   │   └── gmail_service.py     # Per-user Gmail API client builder
 │   │   ├── db/supabase.py           # Supabase client + helpers
 │   │   ├── models/chat.py           # Pydantic request models
