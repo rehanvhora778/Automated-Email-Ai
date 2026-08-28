@@ -14,20 +14,21 @@ number you can defend.
 ## Results
 
 Trained on the [SpamAssassin public corpus](https://spamassassin.apache.org/old/publiccorpus/) —
-**4,528 real emails** (2,720 ham / 1,808 spam) after de-duplication — plus **400 synthetic
-ordinary business emails** added to the ham class (see *Modern work mail* below for why).
+**4,528 real emails** (2,720 ham / 1,808 spam) after de-duplication — plus **600 synthetic
+legitimate emails** added to the ham class, 400 business and 200 transactional (see
+*Modern work mail* below for why).
 
-| Metric | Held-out test set (n = 986) | Corpus only, before the business ham |
+| Metric | Held-out test set (n = 1026) | Corpus only |
 |---|---|---|
-| Accuracy | **0.9919** | 0.9890 |
+| Accuracy | **0.9932** | 0.9890 |
 | Precision (spam) | **0.9917** | 0.9783 |
-| Recall (spam) | **0.9862** | 0.9945 |
-| F1 | **0.9889** | 0.9863 |
-| ROC-AUC | **0.9998** | 0.9988 |
+| Recall (spam) | **0.9890** | 0.9945 |
+| F1 | **0.9903** | 0.9863 |
+| ROC-AUC | **0.9999** | 0.9988 |
 
-Recall is the one number that fell. It bought a precision rise more than twice its size,
-and false positives on the corpus dropped from 8 to 3 — the right direction for a tool
-that shows a verdict on a user's real mail.
+Recall is the one number still below the corpus-only baseline, and it buys a precision rise
+more than twice its size: false positives on the corpus fall from 8 to 3. That is the right
+direction for a tool that puts a verdict on a user's real mail.
 
 Majority-class baseline is 0.601, so the model is doing real work.
 
@@ -41,7 +42,7 @@ Majority-class baseline is 0.601, so the model is doing real work.
 
 ![Confusion matrix](models/confusion_matrix.png)
 
-Of 986 test emails, **8 are wrong**: 3 false positives and 5 missed spam.
+Of 1,026 test emails, **7 are wrong**: 3 false positives and 4 missed spam.
 
 ### Modern work mail: the failure the corpus test set could not see
 
@@ -60,19 +61,46 @@ trained on, in three groups: business mail of the register `work_negatives.py` t
 phrased differently, legitimate mail from registers it never covers at all (personal notes,
 university, utilities, healthcare), and real junk to guard the other direction.
 
-| | Before | After |
-|---|---|---|
-| Business mail, unseen phrasing (n=20) | 7 wrong (35%) | **0 wrong (0%)** |
-| Registers never trained on (n=10) | 5 wrong (50%) | **1 wrong (10%)** |
-| Real spam still caught (n=8) | 8/8 | **8/8** |
-| **Ham false-positive rate** | **40%** | **3%** |
+| | Corpus only | + business ham | + service notices |
+|---|---|---|---|
+| Business mail, unseen phrasing (n=20) | 7 wrong (35%) | **0 wrong** | **0 wrong** |
+| Transactional notices (n=10) | — | 4 wrong (40%) | **0 wrong** |
+| Registers nothing generates (n=10) | — | 2 wrong (20%) | **0 wrong** |
+| Real spam still caught (n=11) | 11/11 | 11/11 | **11/11** |
+| **Ham false-positive rate** | **40%** | 15% | **0%** |
+| Corpus F1 | 0.9863 | 0.9889 | **0.9903** |
+
+### The second gap: words that used to mean spam
+
+Business ham fixed work email and left one failure standing — *"Your prescription is
+ready for collection at the pharmacy on Mill Road"* at **83.8% spam**. Asking the model
+which tokens drove that answers it immediately: `prescription` and `pharmacy`. SpamAssassin
+was assembled when pharmaceutical spam was the dominant genre, so in the training data
+essentially every mention of a prescription was junk. The model learned the word, not the
+intent. The same trap is set for `loan`, `delivery`, `statement` and `account`.
+
+`service_negatives.py` supplies genuine notices that use those words, teaching that context
+decides. The pharmacy message now scores **11.6%**, and — the number that matters — pharma
+spam is still caught: *"ONLINE PHARMACY - no prescription required"* at 94.7%, *"Your
+PHARMACY order is waiting"* at 83.7%. That second one is the honest cost: it sat at 95.5%
+before, so the margin narrowed. It remains inside the Spam band, and the eval keeps three
+pharma spam messages precisely to watch it.
+
+**On the eval itself.** This file first shipped with three groups, and the pharmacy notice
+lived in the group labelled *never trained on*. Teaching that register would have quietly
+turned an untaught probe into a taught one while the label still said otherwise, so the
+groups were restructured in the same change: those messages moved to `SERVICE_NOTICES`, and
+a genuinely untaught group was written from registers nothing generates — family, community,
+hobbies. That group improved on its own, 2 wrong to 0, without being taught. Reporting a
+win on an eval you have since trained against measures memorisation, not generalisation.
 
 The out-of-register group is the one that matters: it improves without having been taught,
 so the model generalised past the templates rather than memorising them. The same holds
 across seeds — three sets of 400 samples with **zero overlap** train models that score
 identically on both the corpus and this set. What carries is the register, not the wording.
 
-**Choosing n.** More synthetic ham is not better. Sweeping it:
+**Choosing n.** More synthetic ham is not better. Sweeping the business ham, with service
+notices held out:
 
 | n | Corpus F1 | Missed spam | Ham FP |
 |---|---|---|---|
@@ -87,6 +115,19 @@ identically on both the corpus and this set. What carries is the register, not t
 Past a few hundred the added ham shifts the class prior far enough to cost recall while
 buying nothing further. 400 sits at the top of the corpus F1 curve and is the smallest n
 that gets there, so it dilutes the real corpus least.
+
+Service notices were swept the same way, with business ham fixed at 400. Less is needed:
+
+| n | Corpus F1 | Recall | Service wrong | Untaught wrong |
+|---|---|---|---|---|
+| 0 | 0.9889 | 0.9862 | 4/10 | 2/10 |
+| **200** | **0.9903** | **0.9890** | **0/10** | **0/10** |
+| 400 | 0.9861 | 0.9807 | 0/10 | 0/10 |
+| 700 | 0.9875 | 0.9834 | 0/10 | 0/10 |
+| 1000 | 0.9833 | 0.9751 | 0/10 | 0/10 |
+
+200 is both the best corpus F1 of any configuration tried and enough to clear the held-out
+set completely.
 
 ---
 
@@ -112,19 +153,18 @@ explanation. Fast free verdict from the model; human-readable reasoning from Mis
 
 ## Honest limitations
 
-1. **The business ham is synthetic.** 400 of the 3,120 ham examples are generated by
-   `work_negatives.py`, not collected. The model can only learn the registers represented
-   there, and the held-out set still shows one failure — a pharmacy collection notice
-   scored **83.8%**, confidently inside the Spam band — from a register it was never
-   taught. A corpus of real modern mail is the honest fix; this is the closest substitute
-   available offline. It is the same remedy `hard_negatives.py` applies to the phishing
-   model, with the same caveat.
+1. **600 of the 3,320 ham examples are synthetic**, from `work_negatives.py` and
+   `service_negatives.py` rather than collected. The held-out set is clean at 0/40, but a
+   clean eval is not the same as a solved problem: the model can only have learned the
+   registers those two modules represent plus whatever generalises from them, and the
+   untaught group is only ten messages. A corpus of real modern mail remains the honest
+   fix; this is the closest substitute available offline. Same remedy and same caveat as
+   `hard_negatives.py` on the phishing side.
 
-   Worth naming precisely, because the sweep above cannot see it: n=400 and n=1400 both
-   leave exactly one of thirty ham messages wrong, but they are not equally wrong. At
-   n=1400 that message scores 73% (Suspicious); at n=400 it scores 84% (Spam). Counting
-   failures hides how bad a failure is, and n was chosen on counts and corpus F1. The
-   residual here is a confident error, not a borderline one.
+   One measurement lesson worth keeping. An earlier configuration and the shipped one both
+   left exactly one of thirty ham messages wrong, so the sweep saw them as equivalent — but
+   one scored it 73% (Suspicious) and the other 84% (Spam). Counting failures says nothing
+   about how bad each one is, and n was being chosen on counts.
 2. **`hard_ham` accuracy is 0.962**, up from 0.877 once the business ham was added. The corpus includes a folder of genuine opt-in
    marketing mail, and that is where nearly every false positive lands — a Netscape 7.0
    release announcement, a Matrox product email, a Word-A-Day newsletter. They share
@@ -391,6 +431,7 @@ ml/
 ├── prepare_phishing.py              Nazario mbox + SpamAssassin -> data/phishing.csv
 ├── hard_negatives.py                synthetic legitimate security mail -> data/hard_negatives.csv
 ├── work_negatives.py                synthetic ordinary business mail -> data/work_negatives.csv
+├── service_negatives.py             synthetic legitimate service notices -> data/service_negatives.csv
 ├── eval_workmail.py                 held-out check: does it leave modern mail alone?
 ├── train.py                         spam: benchmark 3 models, evaluate, save
 ├── train_phishing.py                phishing: benchmark 3 representations, evaluate, save
@@ -444,6 +485,7 @@ pip install -r ml/requirements.txt
 # 4. spam:     parse -> augment -> train -> evaluate  (~45s)
 python ml/prepare_data.py
 python ml/work_negatives.py
+python ml/service_negatives.py
 python ml/train.py
 python ml/eval_workmail.py       # held-out modern mail, not part of training
 

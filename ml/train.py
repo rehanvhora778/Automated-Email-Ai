@@ -42,6 +42,7 @@ from sklearn.svm import LinearSVC
 HERE = Path(__file__).parent
 DATA = HERE / "data" / "emails.csv"
 WORK_NEGATIVES = HERE / "data" / "work_negatives.csv"
+SERVICE_NEGATIVES = HERE / "data" / "service_negatives.csv"
 MODELS = HERE / "models"
 RANDOM_STATE = 42
 
@@ -92,12 +93,16 @@ def load_dataset() -> pd.DataFrame:
     eval_workmail.py for the held-out set that measures the difference.
     """
     df = pd.read_csv(DATA).dropna(subset=["text"])
-    if WORK_NEGATIVES.exists():
-        extra = pd.read_csv(WORK_NEGATIVES).dropna(subset=["text"])
-        df = pd.concat([df, extra], ignore_index=True)
-        print(f"added {len(extra)} ordinary business emails (hard negatives)")
-    else:
-        print("! no work_negatives.csv — run `python ml/work_negatives.py` first")
+    for path, what, script in (
+        (WORK_NEGATIVES, "ordinary business emails", "work_negatives.py"),
+        (SERVICE_NEGATIVES, "legitimate service notices", "service_negatives.py"),
+    ):
+        if path.exists():
+            extra = pd.read_csv(path).dropna(subset=["text"])
+            df = pd.concat([df, extra], ignore_index=True)
+            print(f"added {len(extra)} {what} (hard negatives)")
+        else:
+            print(f"! no {path.name} - run `python ml/{script}` first")
     return df.drop_duplicates(subset="text").reset_index(drop=True)
 
 
