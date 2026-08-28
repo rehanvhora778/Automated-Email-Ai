@@ -49,7 +49,11 @@ export function Notifications({
   const { data, isLoading, isError, error, refetch, isFetching } = useGmailNotifications(userId);
   const queryKey = ["gmail-notifications", userId];
 
-  const items = data?.notifications ?? [];
+  // Memoised rather than inlined: `?? []` mints a new array on every render
+  // while notifications are loading. `items` is read by the tab counts, the
+  // header badge and both mutations as well as the filter below, so it is the
+  // value that needs a stable identity, not just the filter's dependency.
+  const items = useMemo(() => data?.notifications ?? [], [data?.notifications]);
   const filtered = useMemo(() => {
     if (filter === "all") return items;
     if (filter === "important") return items.filter((n) => n.important);

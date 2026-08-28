@@ -37,8 +37,11 @@ export function Contacts({
   const [query, setQuery] = useState("");
   const { data, isLoading, isError, error, refetch, isFetching } = useGmailContacts(userId);
 
-  const all = data?.contacts ?? [];
+  // Built inside the memo rather than above it: `?? []` mints a new array on
+  // every render while contacts are still loading, which is a dependency that
+  // never compares equal, so the filter re-ran on every render.
   const filtered = useMemo(() => {
+    const all = data?.contacts ?? [];
     const q = query.trim().toLowerCase();
     if (!q) return all;
     return all.filter(
@@ -47,7 +50,7 @@ export function Contacts({
         c.email.toLowerCase().includes(q) ||
         c.domain.toLowerCase().includes(q)
     );
-  }, [all, query]);
+  }, [data?.contacts, query]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
