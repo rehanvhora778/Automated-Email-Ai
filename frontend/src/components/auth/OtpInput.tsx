@@ -42,14 +42,6 @@ export function OtpInput({
     refs.current[0]?.focus();
   }, []);
 
-  const setAt = (index: number, digit: string) => {
-    const chars = value.padEnd(length, " ").split("");
-    chars[index] = digit || " ";
-    const next = chars.join("").replace(/\s/g, " ").trimEnd();
-    onChange(next.replace(/\s/g, ""));
-    return next.replace(/\s/g, "");
-  };
-
   const handleInput = (index: number, raw: string) => {
     const digit = raw.replace(/\D/g, "").slice(-1);
     if (!digit) return;
