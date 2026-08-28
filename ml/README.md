@@ -81,10 +81,11 @@ intent. The same trap is set for `loan`, `delivery`, `statement` and `account`.
 
 `service_negatives.py` supplies genuine notices that use those words, teaching that context
 decides. The pharmacy message now scores **11.6%**, and — the number that matters — pharma
-spam is still caught: *"ONLINE PHARMACY - no prescription required"* at 94.7%, *"Your
-PHARMACY order is waiting"* at 83.7%. That second one is the honest cost: it sat at 95.5%
-before, so the margin narrowed. It remains inside the Spam band, and the eval keeps three
-pharma spam messages precisely to watch it.
+spam is still caught. All three pharma messages in the eval: 96.4%, 94.7% and 83.7%.
+
+That last one is the honest cost — *"Your PHARMACY order is waiting"* sat at 95.5% before,
+so the margin narrowed by twelve points. It stays inside the Spam band, and those three
+messages are in the eval precisely so the next change to this register has to look at them.
 
 **On the eval itself.** This file first shipped with three groups, and the pharmacy notice
 lived in the group labelled *never trained on*. Teaching that register would have quietly
