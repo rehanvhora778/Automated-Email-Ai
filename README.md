@@ -82,7 +82,7 @@ flowchart LR
 ```
 
 **How it fits together**
-- The **React SPA** owns auth, the chat workspace and the compose modal (`App.jsx`), and routes all "workspace" views through `CopilotView.tsx`.
+- The **React SPA** owns auth, the chat workspace and the compose modal (`App.tsx`), and routes all "workspace" views through `CopilotView.tsx`.
 - It talks to **Supabase directly** for authentication and for reading the user's own rows (protected by row-level security), and to the **FastAPI backend** for everything that needs Gmail or the LLM.
 - The **FastAPI backend** is organised as one router per domain. It builds a per-user Gmail client from the stored OAuth token, calls **Mistral AI** for all generative features, and uses the Supabase **service-role** key for privileged reads/writes.
 
@@ -187,13 +187,15 @@ Automated-Email-Ai/
 │   └── runtime.txt
 ├── frontend/                        # React + Vite + TypeScript SPA
 │   ├── src/
-│   │   ├── App.jsx                  # Auth, chat workspace, compose modal, shell
+│   │   ├── App.tsx                  # Auth, chat workspace, compose modal, shell
 │   │   ├── CopilotView.tsx          # Router for workspace views
 │   │   ├── pages/                   # Dashboard, Analytics, Profile, Settings, …
 │   │   ├── components/              # UI kit, charts, dashboard, inbox, reply, tools
 │   │   ├── lib/                     # API client, React Query hooks, types, helpers
-│   │   └── supabaseClient.js        # Supabase browser client
+│   │   └── supabaseClient.ts        # Supabase browser client
 │   ├── package.json
+│   ├── vite.config.ts               # Vite + React plugin (Fast Refresh)
+│   ├── .eslintrc.cjs                # ESLint: TypeScript, React, hooks
 │   └── tailwind.config.js
 ├── ml/                              # Machine learning module
 │   ├── prepare_data.py              # SpamAssassin corpus -> tidy CSV
@@ -267,7 +269,7 @@ npm install
 npm run dev        # → http://localhost:5173
 ```
 
-The frontend's Supabase project (URL + anon key) is configured in `frontend/src/supabaseClient.js`, and the backend base URL is the `API_URL` constant (`http://localhost:8000`).
+The frontend's Supabase project (URL + anon key) is configured in `frontend/src/supabaseClient.ts`, and the backend base URL is the `API_URL` constant (`http://localhost:8000`).
 
 ### 4. Google sign-in setup
 
