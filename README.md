@@ -121,7 +121,7 @@ sequenceDiagram
 | **Frontend** | React 18, Vite 5, TypeScript, Tailwind CSS 3, Framer Motion, TanStack React Query 5, Recharts 3, Axios, React Markdown + remark-gfm, sonner (toasts), lucide-react |
 | **Backend** | FastAPI, Uvicorn, Python 3.10, Pydantic, python-multipart |
 | **AI** | Mistral AI (`mistral-medium-latest`) via the official `mistralai` SDK |
-| **Email** | Gmail API + Google OAuth 2.0 (`google-api-python-client`, `google-auth-oauthlib`) |
+| **Email** | Gmail API + Google OAuth 2.0 (`google-api-python-client`, `google-auth`) |
 | **Machine Learning** | scikit-learn (TF-IDF, LinearSVC, FeatureUnion, calibration), pandas, NumPy, joblib, Matplotlib, Jupyter |
 | **Data & Auth** | Supabase (PostgreSQL + Auth) with Row-Level Security |
 
