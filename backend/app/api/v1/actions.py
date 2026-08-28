@@ -1,21 +1,18 @@
 import os
-import io
 import json
 import base64
 import requests
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import RedirectResponse
 from app.db.supabase import supabase  
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from pydantic import BaseModel
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from reportlab.pdfgen import canvas
 
 router = APIRouter()
 

@@ -182,13 +182,6 @@ export interface ToolPayload {
   context?: string;
 }
 
-export interface ToolResponse {
-  content: string;
-  error?: string;
-  /** Present only for actions backed by a locally trained model. */
-  ml?: MlVerdict;
-}
-
 // ---- Local ML classifiers (trained models, not LLM prompts) ----
 
 /**

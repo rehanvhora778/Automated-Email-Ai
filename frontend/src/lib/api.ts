@@ -9,7 +9,6 @@ import type {
   ContactsResponse,
   NotificationsResponse,
   ToolPayload,
-  ToolResponse,
   MlVerdict,
   ClassifyHealthResponse,
 } from "./types";
@@ -165,15 +164,11 @@ export async function classifyHealth(): Promise<ClassifyHealthResponse | null> {
   }
 }
 
-/** Generic AI writing tool (translate, improve, rewrite, summarize, …). */
-export async function runTool(payload: ToolPayload): Promise<ToolResponse> {
-  const { data } = await apiClient.post("/api/v1/ai/tool", payload);
-  return data as ToolResponse;
-}
-
 /**
- * Streaming variant of runTool. Calls `onChunk` with each text delta as it
- * arrives and resolves with the full text. Pass an AbortSignal to cancel.
+ * Run an AI writing tool, streaming the result. Calls `onChunk` with each text
+ * delta as it arrives and resolves with the full text. Pass an AbortSignal to
+ * cancel. The backend also exposes a non-streaming POST /api/v1/ai/tool, which
+ * nothing in this app calls.
  */
 export async function streamTool(
   payload: ToolPayload,
