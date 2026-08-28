@@ -184,7 +184,7 @@ def classify_spam(text: str) -> dict:
         "spam_probability": round(spam_prob * 100, 1),
         "signals": _top_signals(model, text),
         "latency_ms": round(latency_ms, 3),
-        "model": "TF-IDF + LinearSVC (SpamAssassin corpus)",
+        "model": "TF-IDF + LinearSVC (SpamAssassin + business ham)",
     }
 
 

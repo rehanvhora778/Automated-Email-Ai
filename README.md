@@ -23,7 +23,7 @@
 
 Every data surface is **real**: inbox summaries, analytics, contacts and notifications are computed live from the Gmail API, and drafts are personalised with your profile. The app deliberately **never auto-sends** — every AI draft is handed to a compose modal for a human "Review & Send".
 
-Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn model trained on real labelled corpora — spam **0.986 F1** on 4,528 emails, phishing **0.989 F1** on 7,833 — and calls the LLM only for the prose explanation. See [`ml/`](ml/) for training, evaluation, error analysis and the limitations.
+Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn model trained on real labelled corpora — spam **0.989 F1** on 4,928 emails, phishing **0.989 F1** on 7,833 — and calls the LLM only for the prose explanation. See [`ml/`](ml/) for training, evaluation, error analysis and the limitations.
 
 > **Why it's interesting:** it combines OAuth-based Gmail integration, two trained ML classifiers benchmarked against the LLM prompts they replaced, an LLM prompt layer with 6 writing tools and 13 reply styles, an evidence-grounded inbox briefing, and real-time analytics — wired together with React Query caching and Supabase row-level security.
 

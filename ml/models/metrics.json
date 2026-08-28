@@ -2,103 +2,107 @@
   "selected_model": "LinearSVC",
   "cv_f1": {
     "MultinomialNB": {
-      "mean": 0.971291794684095,
-      "std": 0.007705419609489355
+      "mean": 0.9697157439992049,
+      "std": 0.007599871086943301
     },
     "LogisticRegression": {
-      "mean": 0.9763250514458578,
-      "std": 0.0053160014717802215
+      "mean": 0.9721870146884213,
+      "std": 0.001478741039655084
     },
     "LinearSVC": {
-      "mean": 0.9816800872379006,
-      "std": 0.0028055810029269574
+      "mean": 0.9744371151457433,
+      "std": 0.0030989143511559766
     }
   },
   "test_metrics": {
-    "accuracy": 0.9889624724061811,
-    "precision": 0.9782608695652174,
-    "recall": 0.994475138121547,
-    "f1": 0.9863013698630136,
-    "roc_auc": 0.998750812479688
+    "accuracy": 0.9918864097363083,
+    "precision": 0.9916666666666667,
+    "recall": 0.9861878453038674,
+    "f1": 0.9889196675900277,
+    "roc_auc": 0.9997963592576853
   },
   "confusion_matrix": {
-    "true_ham": 536,
-    "false_spam": 8,
-    "missed_spam": 2,
-    "true_spam": 360
+    "true_ham": 621,
+    "false_spam": 3,
+    "missed_spam": 5,
+    "true_spam": 357
   },
   "per_source_accuracy": {
     "easy_ham": {
-      "n": 487,
-      "accuracy": 0.997946611909651
+      "n": 482,
+      "accuracy": 0.9979253112033195
     },
     "hard_ham": {
-      "n": 57,
-      "accuracy": 0.8771929824561403
+      "n": 53,
+      "accuracy": 0.9622641509433962
     },
     "spam": {
-      "n": 96,
-      "accuracy": 1.0
+      "n": 91,
+      "accuracy": 0.978021978021978
     },
     "spam_2": {
-      "n": 266,
-      "accuracy": 0.9924812030075187
+      "n": 271,
+      "accuracy": 0.988929889298893
+    },
+    "work_ham": {
+      "n": 89,
+      "accuracy": 1.0
     }
   },
-  "inference_ms_per_email": 0.25598949985578656,
-  "train_seconds": 2.538588299998082,
+  "inference_ms_per_email": 1.0239010001532733,
+  "train_seconds": 4.99256719998084,
   "dataset": {
     "name": "SpamAssassin public corpus",
-    "total": 4528,
-    "ham": 2720,
+    "total": 4928,
+    "ham": 3120,
     "spam": 1808,
-    "train": 3622,
-    "test": 906
+    "train": 3942,
+    "test": 986
   },
   "top_features": {
     "spam": [
-      "your",
       "nbsp",
-      "our",
+      "your",
       "click here",
       "free",
+      "our",
       "please",
-      "spamassassin sightings",
       "you",
-      "sightings",
       "remove",
+      "spamassassin sightings",
+      "sightings",
       "click",
-      "heaven",
       "here",
+      "htm",
       "will",
-      "you will",
-      "we",
-      "here to",
       "money",
       "credit",
-      "business"
+      "you will",
+      "heaven",
+      "for you",
+      "we"
     ],
     "ham": [
       "re",
-      "2002",
       "the",
+      "2002",
       "wrote",
       "url http",
       "but",
       "it",
-      "that",
       "date",
+      "that",
       "url",
-      "they",
-      "org",
-      "spambayes",
       "said",
+      "on",
+      "they",
+      "thanks",
+      "spambayes",
       "spamassassin talk",
+      "org",
       "razor",
-      "rpm",
-      "of",
-      "users",
-      "not"
+      "which",
+      "spam"
     ]
   }
 }

@@ -12,3 +12,4 @@ ml/data/raw/
 ml/data/emails.csv
 ml/data/phishing.csv
 ml/data/hard_negatives.csv
+ml/data/work_negatives.csv

@@ -41,6 +41,7 @@ from sklearn.svm import LinearSVC
 
 HERE = Path(__file__).parent
 DATA = HERE / "data" / "emails.csv"
+WORK_NEGATIVES = HERE / "data" / "work_negatives.csv"
 MODELS = HERE / "models"
 RANDOM_STATE = 42
 
@@ -80,8 +81,28 @@ def candidates():
     }
 
 
-def main() -> None:
+def load_dataset() -> pd.DataFrame:
+    """The corpus plus synthetic ordinary business mail.
+
+    SpamAssassin's ham is 2002 mailing list traffic, so without these the model
+    learns "ham = a Linux thread from 2002" and reads everyday work vocabulary —
+    invoice, approval, please, your records — as evidence of spam. It called 40%
+    of ordinary modern mail Suspicious or worse. See work_negatives.py for how
+    they are built and why being synthetic is a documented limitation, and
+    eval_workmail.py for the held-out set that measures the difference.
+    """
     df = pd.read_csv(DATA).dropna(subset=["text"])
+    if WORK_NEGATIVES.exists():
+        extra = pd.read_csv(WORK_NEGATIVES).dropna(subset=["text"])
+        df = pd.concat([df, extra], ignore_index=True)
+        print(f"added {len(extra)} ordinary business emails (hard negatives)")
+    else:
+        print("! no work_negatives.csv — run `python ml/work_negatives.py` first")
+    return df.drop_duplicates(subset="text").reset_index(drop=True)
+
+
+def main() -> None:
+    df = load_dataset()
     X, y = df["text"].astype(str), df["label"].astype(int)
     print(f"corpus: {len(df)} emails  ({(y == 0).sum()} ham / {(y == 1).sum()} spam)\n")
 
