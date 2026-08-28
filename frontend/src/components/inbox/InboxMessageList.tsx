@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useInboxMessages } from "../../lib/hooks";
-import { runInboxAction } from "../../lib/api";
+import { apiErrorMessage, apiErrorStatus, runInboxAction } from "../../lib/api";
 import type { InboxActionType, InboxMessage, InboxMessagesResponse } from "../../lib/types";
 import { GlassCard } from "../ui/GlassCard";
 import { Skeleton } from "../ui/Skeleton";
@@ -100,7 +100,7 @@ export function InboxMessageList({
 
   const actionMut = useMutation<
     void,
-    any,
+    Error,
     { id: string; action: InboxActionType },
     { prev?: InboxMessagesResponse }
   >({
@@ -113,10 +113,10 @@ export function InboxMessageList({
     },
     onError: (err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(queryKey, ctx.prev);
-      if (err?.response?.status === 403) {
+      if (apiErrorStatus(err) === 403) {
         toast.error("Re-link Gmail to enable inbox actions");
       } else {
-        toast.error(err?.response?.data?.detail || "Action failed");
+        toast.error(apiErrorMessage(err, "Action failed"));
       }
     },
     onSuccess: (_d, { action }) => toast.success(ACTION_TOAST[action]),

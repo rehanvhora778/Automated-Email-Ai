@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Sparkles, Wand2, Reply as ReplyIcon, LayoutGrid, Columns } from "lucide-react";
 import { toast } from "sonner";
-import { generateReplies } from "../../lib/api";
+import { apiErrorDetail, apiErrorMessage, generateReplies } from "../../lib/api";
 import type { ReplyStyle, ReplyStyles } from "../../lib/types";
 import { REPLY_STYLES, DEFAULT_SELECTED_STYLES } from "../../lib/replyStyles";
 import { GlassCard } from "../ui/GlassCard";
@@ -46,7 +46,7 @@ export function SmartReply({
       setReplies(data);
       toast.success(`${Object.keys(data).length} replies generated`);
     },
-    onError: (e: any) => toast.error(e?.response?.data?.detail || "Generation failed"),
+    onError: (e) => toast.error(apiErrorMessage(e, "Generation failed")),
   });
 
   const onSubmit = (vals: FormValues) => {
@@ -219,7 +219,7 @@ export function SmartReply({
         <GlassCard className="p-6">
           <ErrorState
             title="Couldn't generate replies"
-            message={(genMut.error as any)?.response?.data?.detail}
+            message={apiErrorDetail(genMut.error)}
             onRetry={() => lastInput && genMut.mutate(lastInput)}
           />
         </GlassCard>

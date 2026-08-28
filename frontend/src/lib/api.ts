@@ -41,6 +41,53 @@ if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_URL
 
 export const apiClient = axios.create({ baseURL: API_URL });
 
+// ---- Reading a failed request ------------------------------------------
+//
+// FastAPI puts its message in `detail`, and axios nests the response body
+// under `error.response.data` with the status alongside it. A request that
+// never reached the server has no `response` at all, so every reader below
+// narrows from `unknown` and copes with the shape being absent. Callers used
+// to reach through `any` for this, which silently permitted any path at all.
+
+interface ApiErrorEnvelope {
+  response?: { status?: number; data?: { detail?: unknown } };
+}
+
+function envelope(error: unknown): ApiErrorEnvelope {
+  return (typeof error === "object" && error !== null ? error : {}) as ApiErrorEnvelope;
+}
+
+/** HTTP status of a failed request, or undefined if it never got a response. */
+export function apiErrorStatus(error: unknown): number | undefined {
+  const status = envelope(error).response?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/** The server's own message, when it sent one. */
+export function apiErrorDetail(error: unknown): string | undefined {
+  const detail = envelope(error).response?.data?.detail;
+  return typeof detail === "string" && detail.trim() ? detail : undefined;
+}
+
+/** The server's message, else something the user can actually read. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  return apiErrorDetail(error) ?? fallback;
+}
+
+/**
+ * Message of a thrown Error, else the fallback. For the streaming paths, which
+ * use `fetch` and fold the server's detail into the Error they throw, so there
+ * is no axios envelope to read.
+ */
+export function thrownMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/** True when the caller aborted the request rather than it failing. */
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 /** Smart Reply — six reply styles from a pasted email. */
 export async function generateReplies(
   payload: GenerateReplyPayload

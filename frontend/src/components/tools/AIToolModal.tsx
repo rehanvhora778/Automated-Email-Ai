@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, Send, Wand2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { classifyEmail, streamTool } from "../../lib/api";
+import { classifyEmail, isAbortError, streamTool, thrownMessage } from "../../lib/api";
 import type { MlVerdict, ToolAction } from "../../lib/types";
 import { Button } from "../ui/Button";
 import { Markdown } from "../ui/Markdown";
@@ -104,10 +104,11 @@ export function AIToolModal({
         (chunk) => setOutput((prev) => prev + chunk),
         controller.signal
       );
-    } catch (e: any) {
-      if (e?.name !== "AbortError") {
-        setErrorMsg(e?.message || "Generation failed");
-        toast.error(e?.message || "Generation failed");
+    } catch (e) {
+      if (!isAbortError(e)) {
+        const message = thrownMessage(e, "Generation failed");
+        setErrorMsg(message);
+        toast.error(message);
       }
     } finally {
       setStreaming(false);

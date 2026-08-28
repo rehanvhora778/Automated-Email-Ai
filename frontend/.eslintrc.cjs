@@ -36,11 +36,9 @@ module.exports = {
     // Keep the half of this rule that catches real mistakes — a stray `>` or
     // `}` in JSX renders wrong. An apostrophe in prose does not.
     "react/no-unescaped-entities": ["error", { forbid: [">", "}"] }],
-    // Reported, not enforced. Every current instance is an axios error handler
-    // reaching for `error.response.data.detail`; typing those properly is a
-    // change to application code, not something adding a linter should do
-    // silently. Left visible so they get fixed deliberately.
-    "@typescript-eslint/no-explicit-any": "warn",
+    // no-explicit-any is left at the error level `@typescript-eslint/recommended`
+    // sets: the codebase has none, and the readers in lib/api.ts exist so that
+    // reaching into a failed request does not need one.
   },
   overrides: [
     {

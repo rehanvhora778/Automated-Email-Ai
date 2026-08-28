@@ -7,7 +7,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useGmailNotifications } from "../lib/hooks";
-import { markNotificationsRead, runInboxAction } from "../lib/api";
+import { apiErrorMessage, apiErrorStatus, markNotificationsRead, runInboxAction } from "../lib/api";
 import type { GmailNotification, NotificationsResponse } from "../lib/types";
 import { timeAgo } from "../lib/time";
 import { Badge } from "../components/ui/Badge";
@@ -72,10 +72,10 @@ export function Notifications({
       toast.success(`Marked ${items.length} email${items.length === 1 ? "" : "s"} as read`);
       invalidateUnread();
     },
-    onError: (err: any) => {
+    onError: (err) => {
       invalidateUnread();
-      if (err?.response?.status === 403) toast.error("Re-link Gmail to enable mark-as-read");
-      else toast.error(err?.response?.data?.detail || "Couldn't mark as read");
+      if (apiErrorStatus(err) === 403) toast.error("Re-link Gmail to enable mark-as-read");
+      else toast.error(apiErrorMessage(err, "Couldn't mark as read"));
     },
   });
 
@@ -87,10 +87,10 @@ export function Notifications({
       );
     },
     onSuccess: () => invalidateUnread(),
-    onError: (err: any) => {
+    onError: (err) => {
       invalidateUnread();
-      if (err?.response?.status === 403) toast.error("Re-link Gmail to enable mark-as-read");
-      else toast.error(err?.response?.data?.detail || "Couldn't mark as read");
+      if (apiErrorStatus(err) === 403) toast.error("Re-link Gmail to enable mark-as-read");
+      else toast.error(apiErrorMessage(err, "Couldn't mark as read"));
     },
   });
 
