@@ -22,7 +22,7 @@ function LoadingRows() {
 }
 
 /** The response carries the briefing inline; fill in anything the API omitted. */
-export function toBriefing(data: InboxSummaryResponse): InboxBriefing {
+function toBriefing(data: InboxSummaryResponse): InboxBriefing {
   return {
     overview: data.overview ?? data.summary ?? "",
     emails: data.emails ?? [],
