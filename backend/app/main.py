@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # Teeno routes ko import karein
-from app.api.v1 import chat, actions, auth, reply, inbox, tools, agent, analytics, contacts, notifications, otp
+from app.api.v1 import chat, actions, auth, reply, inbox, tools, analytics, contacts, notifications, otp
 import uvicorn
 
 app = FastAPI(title="Smart Email Agent")
@@ -57,9 +57,6 @@ app.include_router(inbox.router, prefix="/api/v1/inbox", tags=["Inbox"])
 
 # 7. AI Writing Tools (cover letter, cold email, translate, improve, rewrite)
 app.include_router(tools.router, prefix="/api/v1/ai", tags=["AI Tools"])
-
-# 8. AI Agent Mode (streamed multi-step command execution)
-app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 
 # 9. Email Analytics (real Gmail volume/trend/category/sender stats)
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])

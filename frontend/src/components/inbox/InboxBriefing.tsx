@@ -205,8 +205,8 @@ function ActionRow({ action }: { action: RecommendedAction }) {
 }
 
 /**
- * The full inbox briefing. Rendered identically by the Inbox page and Agent
- * Mode, so a summary means the same thing wherever it is asked for.
+ * The full inbox briefing: overview, delivery failures, the emails that need
+ * attention, grouped bulk mail, then the ranked actions.
  */
 export function InboxBriefingView({ briefing }: { briefing: Briefing }) {
   const { counts, scope } = briefing;

@@ -8,7 +8,7 @@ import {
   Send, Bot, User, LogOut, Plus, Mail,
   FileUp, Sparkles, MessageSquare, Moon, Zap,
   LayoutDashboard, Reply, Inbox,
-  BarChart3, Users, Bell, Settings as SettingsIcon, Search, Wand2
+  BarChart3, Users, Bell, Settings as SettingsIcon, Search
 } from 'lucide-react';
 import { CopilotView } from './CopilotView';
 import AuthScreen from './AuthScreen';
@@ -333,7 +333,6 @@ const checkOnboardingStatus = async (userId: string) => {
           {([
             { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { key: 'chat', label: 'AI Workspace', icon: Bot },
-            { key: 'agent', label: 'AI Agent', icon: Wand2 },
             { key: 'smartReply', label: 'Smart Reply', icon: Reply },
             { key: 'inbox', label: 'Inbox Summary', icon: Inbox },
           ] as NavItem[]).map((item) => {

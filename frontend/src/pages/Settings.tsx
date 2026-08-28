@@ -188,7 +188,7 @@ export function Settings({
 
       {/* ---------- Gmail connection ---------- */}
       <section className="space-y-3">
-        <SectionTitle icon={<Mail size={17} className="text-rose-400" />} title="Gmail connection" desc="Powers sending, inbox summaries, analytics and agent actions." />
+        <SectionTitle icon={<Mail size={17} className="text-rose-400" />} title="Gmail connection" desc="Powers sending, inbox summaries, analytics and inbox actions." />
         <GlassCard className="space-y-3 p-5">
           <Row
             icon={<Mail size={18} className="text-rose-400" />}

@@ -19,13 +19,13 @@
 
 ## 📖 Overview
 
-**Smart Email Agent** is a full-stack AI email assistant. It connects to your Gmail through OAuth, uses **Mistral AI** to understand and write emails, and streams agentic multi-step actions in real time — all behind a polished, glassmorphic React dashboard.
+**Smart Email Agent** is a full-stack AI email assistant. It connects to your Gmail through OAuth, uses **Mistral AI** to understand and write emails, and streams generated text token by token as it arrives — all behind a polished, glassmorphic React dashboard.
 
 Every data surface is **real**: inbox summaries, analytics, contacts and notifications are computed live from the Gmail API, and drafts are personalised with your profile. The app deliberately **never auto-sends** — every AI draft is handed to a compose modal for a human "Review & Send".
 
 Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn model trained on real labelled corpora — spam **0.986 F1** on 4,528 emails, phishing **0.989 F1** on 7,833 — and calls the LLM only for the prose explanation. See [`ml/`](ml/) for training, evaluation, error analysis and the limitations.
 
-> **Why it's interesting:** it combines OAuth-based Gmail integration, two trained ML classifiers benchmarked against the LLM prompts they replaced, an LLM prompt layer with 6 writing tools and 13 reply styles, a streaming (NDJSON) agent loop, and real-time analytics — wired together with React Query caching and Supabase row-level security.
+> **Why it's interesting:** it combines OAuth-based Gmail integration, two trained ML classifiers benchmarked against the LLM prompts they replaced, an LLM prompt layer with 6 writing tools and 13 reply styles, an evidence-grounded inbox briefing, and real-time analytics — wired together with React Query caching and Supabase row-level security.
 
 ---
 
@@ -41,11 +41,6 @@ Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn mo
   Phishing Detection. Each shows its live F1 score and training corpus pulled from the
   running model, because the verdict comes from a trained classifier rather than a prompt.
 - **Live token streaming** — tool output renders progressively as the model generates it.
-
-### 🧠 AI Agent Mode
-- Natural-language commands ("summarise my inbox", "clean up promotions", "draft a reply to…") are classified into intents and executed as an **animated, streamed step trace**.
-- Real tools: reads & summarises the inbox (returning the same full briefing the Inbox page shows), archives promotional mail, drafts emails/replies/meeting invites.
-- **Safety-first:** drafting intents return a draft for human review — the agent never sends on its own.
 
 ### 📥 Gmail Intelligence (all live data)
 - **AI Inbox Briefing** — every unread email is classified individually as *Requires Action*, *Requires Reply*, *Important*, *Promotional*, *Newsletter*, *Low Priority* or *Needs Review*, then the briefing is assembled in priority order:
@@ -151,7 +146,6 @@ Base URL: `http://localhost:8000` · all routes are prefixed with `/api/v1`.
 | `POST` | `/inbox/action` | Archive / trash / star / mark read / mark important |
 | `POST` | `/ai/tool` | Run an AI writing tool (adds an `ml` block for spam/phishing) |
 | `POST` | `/ai/tool/stream` | Streaming (token-by-token) variant |
-| `POST` | `/agent/run` | Streamed (NDJSON) multi-step agent execution |
 | `GET`  | `/analytics/overview` | Live Gmail volume, trend, category mix, top senders |
 | `GET`  | `/contacts/list` | Real contacts derived from Gmail |
 | `GET`  | `/notifications/list` | Latest unread inbox messages |
@@ -177,7 +171,6 @@ Automated-Email-Ai/
 │   │   │   ├── reply.py            # Smart Reply (multi-style)
 │   │   │   ├── inbox.py            # Inbox summary, tabs & actions
 │   │   │   ├── tools.py            # AI writing tools (+ streaming)
-│   │   │   ├── agent.py            # Streaming agent mode
 │   │   │   ├── analytics.py        # Gmail analytics
 │   │   │   ├── contacts.py         # Contacts from Gmail
 │   │   │   └── notifications.py     # Unread-mail notifications

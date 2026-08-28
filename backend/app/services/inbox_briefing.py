@@ -453,8 +453,9 @@ def build_briefing(service, ai, user_name="there", max_results=inbox_reader.DEFA
 def analyze_records(ai, records, unread_count, user_name="there"):
     """The judgement half of a briefing, over already-read evidence.
 
-    Split out so Agent Mode can show "reading" and "analyzing" as the two
-    separate steps they actually are.
+    Kept separate from the Gmail read so the two halves can be exercised
+    independently — the reading is testable without a model, and the
+    judgement without a mailbox.
     """
     failures = inbox_reader.collect_delivery_failures(records)
 
@@ -489,6 +490,7 @@ def analyze_records(ai, records, unread_count, user_name="there"):
         "capped": unread_count > analyzed_unread,
         "bodies_read": sum(1 for r in records if r["body"]),
     }
-    # Kept so older clients (and Agent Mode) still get a plain-text overview.
+    # Kept so a client that only knows the old response shape still gets a
+    # plain-text overview rather than an empty card.
     briefing["summary"] = briefing["overview"]
     return briefing

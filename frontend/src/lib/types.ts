@@ -354,36 +354,3 @@ export interface NotificationsResponse {
   error?: string;
   notifications: GmailNotification[];
 }
-
-// ---- AI Agent Mode ----
-
-export interface AgentDraft {
-  to: string;
-  subject: string;
-  body: string;
-}
-
-export interface AgentStep {
-  key: string;
-  label: string;
-  state: "pending" | "active" | "done";
-  detail?: string;
-}
-
-/** A single event from the streamed /agent/run response. */
-export interface AgentEvent {
-  type: "status" | "plan" | "step" | "result" | "error";
-  message?: string;
-  intent?: string;
-  steps?: { key: string; label: string }[];
-  key?: string;
-  state?: "active" | "done";
-  detail?: string;
-  summary?: string;
-  /** Present on a summarize_inbox result — the same briefing the Inbox page shows. */
-  briefing?: InboxBriefing | null;
-  answer?: string;
-  draft?: AgentDraft | null;
-  stats?: { archived?: number };
-  needs_gmail?: boolean;
-}
