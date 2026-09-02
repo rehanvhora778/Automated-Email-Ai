@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { supabase, supabaseUrl, supabaseAnonKey } from "../supabaseClient";
-import { GMAIL_SCOPES } from "./authScopes";
+import { SIGN_IN_SCOPES } from "./authScopes";
 
 /** Cached answer from /auth/v1/settings — the provider list rarely changes. */
 let googleEnabled: boolean | null = null;
@@ -41,9 +41,10 @@ async function isGoogleEnabled(): Promise<boolean> {
  * up" versus "signing in", so both buttons do the same thing and Supabase
  * creates the user on first arrival.
  *
- * `access_type: 'offline'` plus `prompt: 'consent'` is what makes Google return
- * a refresh token. Without both, Gmail access would die the moment the first
- * access token expired.
+ * Only identity scopes are requested here. Asking for Gmail at the same time
+ * made sign-in itself fail for every account that was not on the Google test-
+ * user list, because those scopes are restricted; mailbox access is now a
+ * separate, explicit "Link Gmail" step. See `SIGN_IN_SCOPES` for the reasoning.
  *
  * Resolves only on failure — on success the browser has already navigated away.
  */
@@ -60,8 +61,11 @@ export async function startGoogleAuth(): Promise<void> {
     provider: "google",
     options: {
       redirectTo: window.location.origin,
-      scopes: GMAIL_SCOPES.join(" "),
-      queryParams: { access_type: "offline", prompt: "consent" },
+      scopes: SIGN_IN_SCOPES.join(" "),
+      // `select_account` so a shared machine can switch accounts. Deliberately
+      // not `consent`: with identity-only scopes there is no refresh token to
+      // force, so re-prompting would just add a screen to every sign-in.
+      queryParams: { prompt: "select_account" },
     },
   });
 

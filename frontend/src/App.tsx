@@ -19,6 +19,7 @@ import type { CopilotViewName } from './CopilotView';
 import type { ToolAction } from './lib/types';
 import { API_URL } from './lib/api';
 import { useIsRecovering, beginLinkRecovery } from './lib/recoverySession';
+import { SIGN_IN_GRANTS_GMAIL } from './lib/authScopes';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 
@@ -76,8 +77,13 @@ function App() {
    *
    * Supabase exposes `provider_token` / `provider_refresh_token` on the session
    * only on the redirect back from Google — they are gone after the next page
-   * load. Posting them to the backend is what makes signing in also link Gmail,
-   * so the user never sees a second consent screen.
+   * load. When the sign-in consent covered Gmail, posting them to the backend
+   * is what links the mailbox without a second consent screen.
+   *
+   * It no longer does: sign-in asks for identity scopes only, so that any
+   * Google account can get in (see `SIGN_IN_SCOPES`). The call is kept, gated
+   * on what was actually requested, so re-adding the Gmail scopes after Google
+   * verification turns one-consent linking back on with no further changes.
    *
    * Failure here is not fatal: the user is signed in either way, and the
    * Settings screen still offers the manual "Link Gmail" flow.
@@ -120,7 +126,9 @@ function App() {
       // Google's tokens ride along on the session for exactly one moment after
       // sign-in and are never persisted by Supabase, so hand them to the
       // backend right now or lose Gmail access.
-      if (session?.provider_token) captureGoogleTokens(session);
+      // An identity-only token is useless to the Gmail API, and storing it
+      // would overwrite a real one from the Link Gmail flow.
+      if (SIGN_IN_GRANTS_GMAIL && session?.provider_token) captureGoogleTokens(session);
     });
     return () => subscription.unsubscribe();
   }, []);

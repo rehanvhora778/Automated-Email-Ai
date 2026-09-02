@@ -3,9 +3,10 @@
 Two ways in:
 
 * **Google** (recommended) — the browser calls Supabase's Google provider and
-  Supabase issues the session. The sign-in requests Gmail scopes alongside the
-  identity scopes, so one consent covers both and Gmail ends up linked with no
-  second approval screen.
+  Supabase issues the session. Sign-in asks for identity scopes only: the Gmail
+  scopes are restricted, and requesting them here meant only accounts on the
+  Google test-user list could sign in at all. Mailbox access is a separate
+  "Link Gmail" step, so anyone can sign in and try the app.
 * **Email + password** — verified with a code this backend issues and mails
   itself; see `otp.py`. The account is created there, after the code is
   checked, which is what keeps that admin-API call from being an open route
@@ -141,13 +142,20 @@ async def link_google_tokens(
 
     refresh_token = payload.provider_refresh_token or existing_refresh
 
+    # A token from an identity-only sign-in opens no mailbox, and writing it
+    # here would replace a working credential from the Link Gmail flow with one
+    # the Gmail API rejects. Say so plainly and leave the profile untouched.
+    scope = payload.scope or _granted_scopes(payload.provider_token)
+    if "gmail." not in scope:
+        return {"linked": False, "reason": "no_gmail_scope", "user_id": user_id}
+
     # Same shape the /actions/callback flow writes, so gmail_service and every
     # existing caller keep working unchanged.
     token_data = {
         "access_token": payload.provider_token,
         "refresh_token": refresh_token,
         "token_type": "Bearer",
-        "scope": payload.scope or _granted_scopes(payload.provider_token),
+        "scope": scope,
         "expires_in": payload.expires_in,
         "source": "supabase_google_signin",
     }
