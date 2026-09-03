@@ -112,6 +112,27 @@ def _granted_scopes(access_token: str) -> str:
     return (resp.json() or {}).get("scope", "") or ""
 
 
+def token_grants_gmail(token: dict | None) -> bool:
+    """Whether a stored token actually opens a mailbox.
+
+    The presence of a token is not the same thing as Gmail being linked: a
+    sign-in that only ever asked for identity produces a perfectly valid Google
+    token that the Gmail API rejects. Treating that as "linked" hides the Link
+    Gmail prompt from exactly the users who still need to press it.
+
+    Tokens written before scopes were recorded have no `scope` key at all. Those
+    predate identity-only sign-in and could only have come from a Gmail consent,
+    so a refresh token is taken as proof rather than calling them unlinked and
+    nagging people who are already connected.
+    """
+    if not token:
+        return False
+    scope = token.get("scope")
+    if scope is None:
+        return bool(token.get("refresh_token"))
+    return "gmail." in scope
+
+
 @router.post("/google/link")
 async def link_google_tokens(
     payload: GoogleTokenPayload,
@@ -146,7 +167,7 @@ async def link_google_tokens(
     # here would replace a working credential from the Link Gmail flow with one
     # the Gmail API rejects. Say so plainly and leave the profile untouched.
     scope = payload.scope or _granted_scopes(payload.provider_token)
-    if "gmail." not in scope:
+    if not token_grants_gmail({"scope": scope}):
         return {"linked": False, "reason": "no_gmail_scope", "user_id": user_id}
 
     # Same shape the /actions/callback flow writes, so gmail_service and every
@@ -161,7 +182,10 @@ async def link_google_tokens(
     }
 
     try:
-        supabase.from_("profiles").update({"gmail_token": token_data}).eq("id", user_id).execute()
+        # upsert, not update: an update against a missing profile row reports
+        # success while writing nothing, so linking would appear to work and
+        # silently leave the account without a token.
+        supabase.from_("profiles").upsert({"id": user_id, "gmail_token": token_data}).execute()
     except Exception as e:
         print(f"auth: failed to store gmail token: {e}")
         raise HTTPException(status_code=500, detail="Could not save Gmail access")
@@ -203,5 +227,5 @@ async def me(authorization: str | None = Header(default=None)):
         "id": user_id,
         "full_name": row.get("full_name"),
         "avatar_url": row.get("avatar_url"),
-        "gmail_linked": bool(token.get("refresh_token") or token.get("access_token")),
+        "gmail_linked": token_grants_gmail(token),
     }

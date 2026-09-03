@@ -178,8 +178,20 @@ const checkOnboardingStatus = async (userId: string) => {
 
     console.log("Profile data mila:", profile);
 
-    // Sirf Gmail check karo - ek baar Gmail link ho gaya toh popup dobara mat dikhao
-    if (!profile?.gmail_token) {
+    // A token existing is not the same as Gmail being linked. A sign-in that
+    // only asked for identity leaves a valid Google token the Gmail API will
+    // reject, and treating that as linked hides this prompt from the very
+    // people who still have to press it. Tokens written before scopes were
+    // recorded have no scope field; those could only have come from a Gmail
+    // consent, so a refresh token stands in as proof.
+    const token = profile?.gmail_token as { scope?: string; refresh_token?: string } | null;
+    const gmailLinked = token
+      ? token.scope === undefined
+        ? Boolean(token.refresh_token)
+        : token.scope.includes('gmail.')
+      : false;
+
+    if (!gmailLinked) {
       console.log("Popup trigger ho raha hai...");
       setTimeout(() => {
         setShowOnboarding(true);

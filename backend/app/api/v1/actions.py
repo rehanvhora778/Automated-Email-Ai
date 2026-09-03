@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
+from email.header import Header
 from email import encoders
 
 router = APIRouter()
@@ -118,6 +119,22 @@ async def login_google(user_id: str):
     }
     return {"url": "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)}
 
+def _normalise_newlines(text: str) -> str:
+    """Collapse every line-ending convention down to a single \n.
+
+    A browser sends multipart/form-data field values with CRLF line endings —
+    that is what the spec requires — so a body typed with single line breaks
+    arrives here full of \r\n. Python's email generator then emits those
+    bytes as-is inside a message whose own structure uses \n, and the
+    receiving mail client is left with mixed endings it renders as doubled blank
+    lines. The text goes out looking nothing like what was typed.
+
+    Normalising here means the message carries exactly the breaks the author
+    wrote, and the generator adds the CRLF the wire format needs on its own.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _back_to_app(status: str, reason: str = "") -> RedirectResponse:
     """Send the browser back to the app with the outcome in the query string."""
     params = {"gmail": status}
@@ -164,7 +181,9 @@ async def callback(code: str, state: str):
             print(f"actions: could not read existing gmail_token: {e}")
 
     try:
-        supabase.from_("profiles").update({"gmail_token": token_data}).eq("id", user_id).execute()
+        # upsert so a profile row that was never created still receives the
+        # token — an update would quietly match nothing and lose the link.
+        supabase.from_("profiles").upsert({"id": user_id, "gmail_token": token_data}).execute()
     except Exception as e:
         print(f"actions: failed to store gmail token: {e}")
         return _back_to_app("error", "Signed in with Google, but saving the token failed")
@@ -226,8 +245,11 @@ async def send_email(
         service = build('gmail', 'v1', credentials=creds)
         mime_msg = MIMEMultipart()
         mime_msg['to'] = to_email
-        mime_msg['subject'] = subject
-        mime_msg.attach(MIMEText(body, 'plain'))
+        # Header() so a subject containing anything outside ASCII — an accent, a
+        # dash pasted from a document, an emoji — is encoded rather than sent as
+        # raw 8-bit bytes that some servers mangle or reject.
+        mime_msg['subject'] = Header(subject, 'utf-8') if subject else ''
+        mime_msg.attach(MIMEText(_normalise_newlines(body), 'plain', 'utf-8'))
 
         # 2. Attach the user-picked file (any type), if provided
         if extra_file_bytes is not None:
