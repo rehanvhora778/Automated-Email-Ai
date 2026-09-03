@@ -330,6 +330,9 @@ const checkOnboardingStatus = async (userId: string) => {
         user_id: user!.id,
         message: currentMessage,
         conversation_id: activeConversationId,
+        // The user's own calendar date, so "tomorrow" in a draft resolves
+        // against their day rather than the server's UTC one.
+        client_date: new Date().toLocaleDateString('en-CA'),
       });
       setChat(prev => [...prev, {
         role: 'assistant', text: response.data?.content || "Executed.",

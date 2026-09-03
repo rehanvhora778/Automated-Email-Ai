@@ -1,6 +1,7 @@
 import os
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 from mistralai import Mistral
 from dotenv import load_dotenv
@@ -8,6 +9,79 @@ from dotenv import load_dotenv
 from app.services.inbox_reader import relative_age
 
 load_dotenv()
+
+def date_reference(client_date: str | None = None) -> str:
+    """A table of the dates a draft might name, already worked out.
+
+    Models are poor at calendar arithmetic — asked for "Friday" they will
+    confidently pick a date one day off, and an offer letter carrying the wrong
+    start date is worse than one that asked. Resolving every weekday here turns
+    a reasoning step into a lookup.
+
+    `client_date` is the browser's local day. The server runs in UTC, which is
+    already yesterday for a user in the evening anywhere east of it, so their
+    own date is preferred whenever it parses.
+    """
+    today = None
+    if client_date:
+        try:
+            today = datetime.strptime(client_date, "%Y-%m-%d").date()
+        except ValueError:
+            today = None
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+
+    lines = [
+        f"today = {today.strftime('%A, %d %B %Y')}",
+        f"tomorrow = {(today + timedelta(days=1)).strftime('%A, %d %B %Y')}",
+    ]
+    for ahead in range(1, 8):
+        day = today + timedelta(days=ahead)
+        name = day.strftime("%A")
+        if any(line.startswith(f"next {name} ") for line in lines):
+            continue
+        lines.append(f"next {name} = {day.strftime('%A, %d %B %Y')}")
+    return "\n".join(lines)
+
+
+# A line that opens a bullet, a numbered item, a heading or a quote is
+# structure the model meant, not an accident of wrapping.
+_LIST_MARKER = re.compile(r"^\s*(?:[-*•+]|\d+[.)]|#{1,6}\s|>)")
+
+
+def unwrap_hard_breaks(text: str) -> str:
+    """Rejoin lines the model broke in the middle of a sentence.
+
+    Models writing prose inside a JSON string tend to wrap it as if for a
+    terminal, dropping newlines at arbitrary column widths. The chat renders
+    with `whitespace-pre-wrap` and the send path preserves breaks exactly, so
+    those accidental newlines survive all the way into the delivered email and
+    it arrives ragged — a sentence split across three lines for no reason.
+
+    A line is treated as a continuation only when it starts with a lowercase
+    letter, which is the one signal that reliably separates a wrapped sentence
+    from a deliberate new line. That keeps greetings ("Hi Rehan,"), sign-offs
+    ("Best regards,") and every list item intact, since those start with a
+    capital or a marker, while still repairing the case that actually goes
+    wrong. Blank lines are untouched, so paragraph structure survives.
+    """
+    if not text:
+        return text
+    out: list[str] = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if (
+            out
+            and out[-1].strip()
+            and stripped
+            and not _LIST_MARKER.match(line)
+            and stripped[:1].islower()
+        ):
+            out[-1] = out[-1].rstrip() + " " + stripped
+        else:
+            out.append(line)
+    return "\n".join(out)
+
 
 # Smart Reply styles. Keys are stable API identifiers; the frontend picks which
 # to request. The first six preserve the original set (backward compatible).
@@ -180,7 +254,7 @@ class SecretaryAI:
         self.model = "mistral-medium-latest" 
         self.client = Mistral(api_key=api_key)
 
-    def generate_response(self, user_input, profile_data, chat_history=[]):
+    def generate_response(self, user_input, profile_data, chat_history=[], client_date=None):
         # User details setup
         user_name = profile_data.get('full_name', 'User')
         signature = profile_data.get('signature') or f"Best regards,\n{user_name}"
@@ -188,6 +262,8 @@ class SecretaryAI:
         system_instructions = f"""
         You are an Smart Email Assistant.
         USER PROFILE: {json.dumps(profile_data)}
+        DATES (already calculated -- copy these, never work a date out yourself):
+        {date_reference(client_date)}
 
         CORE LOGIC:
         1. IDENTIFY INTENT: Determine the user's LATEST request goal (e.g., writing a specific email).
@@ -198,6 +274,26 @@ class SecretaryAI:
         4. DRAFTING: If all info is present, generate a high-quality draft from the message and profile details.
         5. SIGNATURE: End the draft strictly with:
         {signature}
+
+        WRITING RULES (every draft must follow these):
+        - Write full, correct English. Never use chat shorthand: write "you" not "u",
+          "your" not "ur", "please" not "plz", "thanks" not "thx".
+        - Spell and punctuate correctly. Capitalise the first word of every sentence,
+          every proper noun, and the word "I".
+        - NEVER break a line in the middle of a sentence. A paragraph is one single
+          continuous line. Separate paragraphs with one blank line and nothing else.
+        - Shape: a greeting line, then a blank line, then one to three short
+          paragraphs of two to four sentences each, then a blank line, then the
+          signature above. No wall of text.
+        - Open with the actual point. Skip empty filler such as "I hope this email
+          finds you well" unless the user explicitly asks for it.
+        - Be concrete. Name the specific thing being asked, offered or answered.
+        - Keep the whole email under about 180 words unless the user asks for longer.
+        - Never invent facts, names, dates, numbers or company details. If one is
+          missing, return status "missing_info" and ask for it instead of guessing.
+        - Relative dates are NOT missing information. Look "tomorrow", "Friday" and
+          the like up in DATES above and write that exact date into the email.
+          Never ask the user what today's date is, and never compute one yourself.
 
         RESPONSE FORMAT (Strict JSON):
         {{
@@ -233,13 +329,19 @@ class SecretaryAI:
             )
             
             raw_content = response.choices[0].message.content
-            return json.loads(raw_content)
+            data = json.loads(raw_content)
+            # The rules above cut this down but do not eliminate it; models still
+            # wrap prose written inside a JSON string. Repair it here, where both
+            # the chat view and the send path read from.
+            if isinstance(data.get("content"), str):
+                data["content"] = unwrap_hard_breaks(data["content"])
+            return data
 
         except json.JSONDecodeError:
             print("AI ne JSON format nahi diya.")
             return {
                 "status": "ready",
-                "content": response.choices[0].message.content,
+                "content": unwrap_hard_breaks(response.choices[0].message.content),
                 "metadata": {}
             }
             
@@ -318,7 +420,7 @@ Rules:
         )
         try:
             data = self._chat_json(system_prompt, user_prompt)
-            return {k: (data.get(k) or "").strip() for k in keys}
+            return {k: unwrap_hard_breaks((data.get(k) or "").strip()) for k in keys}
         except Exception as e:
             print(f"generate_replies error: {e}")
             return {k: "" for k in keys}

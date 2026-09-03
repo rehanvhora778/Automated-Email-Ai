@@ -50,6 +50,7 @@ async def chat_with_secretary(req: ChatRequest):
     # 3. AI Response
     try:
         ai_response = ai_secretary.generate_response(
+            client_date=req.client_date,
             user_input=req.message,
             profile_data=profile_data,
             chat_history=chat_history
