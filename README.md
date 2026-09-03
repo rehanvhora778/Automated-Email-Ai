@@ -29,6 +29,25 @@ Spam and phishing detection are **not** LLM prompts. Each runs a scikit-learn mo
 
 ---
 
+## 🔗 Try it live
+
+**[automated-email-ai.vercel.app](https://automated-email-ai.vercel.app)** — sign in with any
+Google account, or with an email and password.
+
+Signing in asks only for your name, email and profile picture, so it goes through cleanly.
+The Gmail-backed screens (Inbox, Analytics, Contacts, Notifications) need mailbox access, and
+there Google shows an **"Google hasn't verified this app"** warning before letting you continue:
+
+> Click **Advanced** → **Go to Automated Email AI (unsafe)** → **Allow**.
+
+That screen appears because Gmail's read and modify permissions are *restricted* scopes, which
+Google flags on any app that has not been through its verification review — a process requiring
+a third-party CASA security assessment. The app explains this in-product before handing you to
+Google. Everything else — the assistant, all 15 AI tools, Smart Reply, Agent Mode and drafting —
+works without linking a mailbox at all.
+
+---
+
 ## ✨ Features
 
 ### 🤖 AI Writing & Assistance
@@ -274,9 +293,12 @@ The frontend's Supabase project (URL + anon key) is configured in `frontend/src/
 ### 4. Google sign-in setup
 
 There are two ways to sign in — **Google** or **email + password** — on separate
-sign-in and sign-up screens. Google is the recommended route because one consent grants
-both the session and Gmail access; a password account works fine but has to link Gmail
-separately from Settings.
+sign-in and sign-up screens. Either way, linking Gmail is a **separate step**.
+
+Sign-in deliberately requests only `openid`, `email` and `profile`. Those are non-sensitive
+scopes that any Google account can approve on a published app, with no warning screen. Asking
+for the Gmail scopes here instead would restrict sign-in itself to accounts on the Google test-user
+list, locking everyone else out of the app entirely — see `frontend/src/lib/authScopes.ts`.
 
 Only the Google route needs configuring. Three things:
 
@@ -290,8 +312,13 @@ Add **both** redirect URIs:
 | `http://localhost:8000/api/v1/actions/callback` | the manual "Link Gmail" fallback |
 
 Enable the **Gmail API**, and on the OAuth consent screen add the scopes
-`gmail.send`, `gmail.readonly`, `gmail.modify` plus your Google account as a **Test user**
-(unverified apps are limited to test users).
+`gmail.send`, `gmail.readonly`, `gmail.modify`.
+
+Set the publishing status to **In production** so any Google account can sign in — in *Testing*
+only listed test users get through, and everyone else is rejected with `access_denied`. Publishing
+requires the consent screen's app name, support email, developer contact, home page and a privacy
+policy and terms URL; the latter two are served from `frontend/public/`. The app stays unverified,
+which only affects the Gmail linking step (see [Try it live](#-try-it-live)).
 
 **b. Supabase Dashboard** → *Authentication → Providers → Google*
 

@@ -20,6 +20,7 @@ import type { ToolAction } from './lib/types';
 import { API_URL } from './lib/api';
 import { useIsRecovering, beginLinkRecovery } from './lib/recoverySession';
 import { SIGN_IN_GRANTS_GMAIL } from './lib/authScopes';
+import { GmailConsentNotice } from './components/gmail/GmailConsentNotice';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 
@@ -61,6 +62,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // Gates the redirect to Google so the unverified-app warning is explained first.
+  const [showGmailNotice, setShowGmailNotice] = useState(false);
   // Compose / Send-email modal state
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
@@ -216,7 +219,18 @@ const checkOnboardingStatus = async (userId: string) => {
     setPendingTool(action);
   };
 
-  const handleGoogleLogin = async () => {
+  /**
+   * Every "Link Gmail" control in the app routes here, so this is the one place
+   * that can warn about Google's unverified-app screen before the browser
+   * leaves. The redirect itself lives in startGmailLink.
+   */
+  const handleGoogleLogin = () => {
+    if (!user) return;
+    setShowGmailNotice(true);
+  };
+
+  const startGmailLink = async () => {
+    setShowGmailNotice(false);
     if (!user) return;
     try {
       const res = await axios.get(`${API_URL}/api/v1/actions/login-google?user_id=${user.id}`);
@@ -522,6 +536,12 @@ const checkOnboardingStatus = async (userId: string) => {
     </div>
   )}
 </AnimatePresence>
+
+      <GmailConsentNotice
+        open={showGmailNotice}
+        onContinue={startGmailLink}
+        onCancel={() => setShowGmailNotice(false)}
+      />
 
       {/* Compose / Send Email Modal */}
       {showCompose && (
