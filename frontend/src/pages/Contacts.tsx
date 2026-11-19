@@ -99,12 +99,26 @@ export function Contacts({
             }
           />
         </GlassCard>
+      ) : data?.rate_limited ? (
+        // Without this the page would quietly claim the user knows nobody.
+        <GlassCard className="p-2">
+          <EmptyState
+            icon={<MailWarning size={26} />}
+            title="Google is rate-limiting this mailbox"
+            description={data.error || "Gmail is temporarily refusing requests. This usually clears within a minute."}
+            action={
+              <Button onClick={() => refetch()}>
+                <RefreshCw size={16} /> Try again
+              </Button>
+            }
+          />
+        </GlassCard>
       ) : data?.needs_reauth ? (
         <GlassCard className="p-2">
           <EmptyState
             icon={<MailWarning size={26} />}
             title="Re-link Gmail for read access"
-            description="Your Gmail was linked with send-only permission. Re-link once so contacts can be read from your mail."
+            description={data.error || "Your Gmail was linked with send-only permission. Re-link once so contacts can be read from your mail."}
             action={
               onLinkGmail ? (
                 <Button onClick={onLinkGmail}>

@@ -14,17 +14,18 @@ Supabase once the code checks out.
 What guards it:
   * codes are stored only as salted hashes, so the table is useless if read
   * ten-minute expiry, five verification attempts, then the code is dead
-  * a per-address send quota, so the endpoint cannot be used to mail-bomb
+  * send quotas per address and per caller, so it cannot be used to mail-bomb
   * verification is constant-time, so timing cannot leak a partial match
 """
 import hashlib
 import hmac
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.db.supabase import supabase
@@ -37,6 +38,21 @@ CODE_TTL_MINUTES = 10
 MAX_ATTEMPTS = 5
 # Sends allowed per address per hour, across both purposes.
 MAX_SENDS_PER_HOUR = 5
+# The per-address quota does nothing about a script working through a list of
+# addresses: every one of them stays under its own limit while the deployment's
+# daily sending allowance is spent and real codes stop arriving. So the caller
+# is capped too — generously, since an office or a campus shares one address.
+MAX_SENDS_PER_IP_PER_HOUR = 20
+# Held in memory, which means per worker process and emptied by every restart
+# or deploy. That is the deliberate trade: a counter that survived either one
+# would mean Redis or another table for something whose whole job is to blunt
+# the easy abuse, and the per-address quota still backs it up.
+_ip_requests: dict[str, list[float]] = {}
+# Hourly expiry is not a bound when the key comes from a header the caller
+# writes: a script rotating X-Forwarded-For adds a row per request and the
+# worker runs out of memory long before the hour is up. Far above the number of
+# real callers an hour brings here, and the quietest are the ones evicted.
+MAX_TRACKED_CALLERS = 5000
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.getenv("SUPABASE_KEY", "")
@@ -111,6 +127,50 @@ def _find_user(email: str) -> dict | None:
     return None
 
 
+def _client_ip(request: Request) -> str:
+    """The caller's address, as well as it can be known from behind a proxy.
+
+    Render terminates TLS in front of the app, so request.client is its proxy
+    and the real caller is the first entry of X-Forwarded-For. Nothing stops a
+    caller setting that header themselves, so this is a speed bump rather than
+    an identity — which is all a throttle needs to be.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    # Cut to the longest an address can actually be. What arrives becomes a
+    # dictionary key kept for an hour, and its length is the caller's choice.
+    first = forwarded.split(",")[0].strip()[:45]
+    if first:
+        return first
+    return request.client.host if request.client else "unknown"
+
+
+def _ip_quota_ok(ip: str) -> bool:
+    """Count one request from `ip`, and say whether it stayed under the cap.
+
+    Attempts are counted rather than sends, so an address that turns out not to
+    exist is not a free retry — enumeration is the shape of abuse this is here
+    to slow down, and it looks exactly like a run of requests that send nothing.
+    """
+    cutoff = time.time() - 3600
+    # Callers that have gone quiet would otherwise sit in the dict forever.
+    for stale in [key for key, seen in _ip_requests.items() if not seen or seen[-1] <= cutoff]:
+        del _ip_requests[stale]
+
+    if len(_ip_requests) > MAX_TRACKED_CALLERS:
+        # A batch rather than a single row, so a flood of fresh keys pays for
+        # this sort once every few hundred requests instead of on every one.
+        by_last_seen = sorted(_ip_requests, key=lambda caller: _ip_requests[caller][-1])
+        for stale in by_last_seen[: len(_ip_requests) // 10 + 1]:
+            del _ip_requests[stale]
+
+    recent = [seen for seen in _ip_requests.get(ip, []) if seen > cutoff]
+    _ip_requests[ip] = recent
+    if len(recent) >= MAX_SENDS_PER_IP_PER_HOUR:
+        return False
+    recent.append(time.time())
+    return True
+
+
 # --------------------------------------------------------------------------
 # request a code
 # --------------------------------------------------------------------------
@@ -120,19 +180,26 @@ class OtpRequest(BaseModel):
 
 
 @router.post("/request")
-async def request_code(payload: OtpRequest):
+async def request_code(payload: OtpRequest, request: Request):
     email = (payload.email or "").strip().lower()
     if not mailer.looks_like_email(email):
         raise HTTPException(status_code=400, detail="That does not look like an email address.")
 
-    if not mailer.is_configured():
+    # Anyone at all can reach this and name the address the server mails, so
+    # the caller is checked before the account lookup and well before any mail.
+    if not _ip_quota_ok(_client_ip(request)):
         raise HTTPException(
-            status_code=500,
-            detail=(
-                "Email sending is not configured on the server. Set SMTP_HOST, SMTP_USER, "
-                "SMTP_PASSWORD and SMTP_FROM, then redeploy."
-            ),
+            status_code=429,
+            detail="Too many codes requested from here. Try again later.",
         )
+
+    # mailer is the only thing that knows which of its transports this
+    # deployment is on, so it is the only thing that can say what is missing;
+    # advice written here would be guessing, and on a host that blocks outbound
+    # SMTP the obvious guess is the one that cannot work.
+    problem = mailer.configuration_problem()
+    if problem:
+        raise HTTPException(status_code=500, detail=problem)
 
     existing = _find_user(email)
 
@@ -324,19 +391,24 @@ class VerifyRecovery(BaseModel):
 async def verify_recovery(payload: VerifyRecovery):
     """Confirm the code, then set the new password."""
     email = (payload.email or "").strip().lower()
+
+    # Nothing is said about the password until the code has been proved. Asked
+    # the other way round, "that is already your current password" answers a
+    # caller holding no code at all, which turns an unauthenticated form into a
+    # place to test password guesses against somebody else's account.
+    _consume(email, "recovery", (payload.code or "").strip())
+
     problem = password_policy.describe_failure(payload.password or "")
     if problem:
         raise HTTPException(status_code=400, detail=problem)
 
-    # Before spending the code: a reset that sets the password back to what it
-    # already was is not a reset, and reporting success would be a lie.
+    # A reset that sets the password back to what it already was is not a
+    # reset, and reporting success would be a lie.
     if _password_is_current(email, payload.password):
         raise HTTPException(
             status_code=400,
             detail="That is already your current password. Choose a different one.",
         )
-
-    _consume(email, "recovery", (payload.code or "").strip())
 
     user = _find_user(email)
     if not user:

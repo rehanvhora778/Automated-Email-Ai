@@ -41,7 +41,7 @@ export function SmartReply({
 
   const genMut = useMutation({
     mutationFn: (vals: FormValues) =>
-      generateReplies({ user_id: userId, original_email: vals.original_email, tone: vals.tone, context: vals.context, styles: selected }),
+      generateReplies({ original_email: vals.original_email, tone: vals.tone, context: vals.context, styles: selected }),
     onSuccess: (data) => {
       setReplies(data);
       toast.success(`${Object.keys(data).length} replies generated`);
@@ -62,7 +62,7 @@ export function SmartReply({
     if (!lastInput) return;
     setRegenerating((r) => ({ ...r, [style]: true }));
     try {
-      const data = await generateReplies({ user_id: userId, ...lastInput, styles: [style] });
+      const data = await generateReplies({ ...lastInput, styles: [style] });
       setReplies((prev) => ({ ...(prev ?? {}), [style]: data[style] ?? "" }));
       toast.success(`Regenerated ${style} reply`);
     } catch {

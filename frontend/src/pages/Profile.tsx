@@ -3,7 +3,7 @@ import {
   CalendarDays, Check, Clock, Layers, Link2, Mail, MailOpen, MailWarning,
   PieChart as PieIcon, RefreshCw, Send, TrendingUp, User, Zap,
 } from "lucide-react";
-import { useAccountProfile, useEmailAnalytics } from "../lib/hooks";
+import { useAccountProfile, useAccountStatus, useEmailAnalytics } from "../lib/hooks";
 import { GlassCard } from "../components/ui/GlassCard";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { StatsCard } from "../components/dashboard/StatsCard";
@@ -72,6 +72,7 @@ export function Profile({
   onLinkGmail?: () => void;
 }) {
   const { data: account, isLoading: accountLoading } = useAccountProfile(userId);
+  const { data: gmail } = useAccountStatus(userId);
   const {
     data: analytics,
     isError: analyticsIsError,
@@ -82,11 +83,24 @@ export function Profile({
   const name = account?.fullName || userEmail?.split("@")[0] || "there";
   // Only claim anything about Gmail once the backend actually answered —
   // a failed or offline-paused query must not read as "not linked".
-  const statusKnown = analytics !== undefined;
-  const analyticsError = (analyticsIsError || analyticsPaused) && !statusKnown;
-  const analyticsLoading = !statusKnown && !analyticsError;
-  const needsReauth = !!analytics?.needs_reauth;
-  const gmailLive = !!analytics?.gmail_linked && !needsReauth;
+  const statusKnown = gmail !== undefined;
+  const statsKnown = analytics !== undefined;
+  const analyticsError = (analyticsIsError || analyticsPaused) && !statsKnown;
+  const analyticsLoading = !statsKnown && !analyticsError;
+  // Two separate ways the link can be short of working: the grant never
+  // carried read access, or Google has since stopped honouring it — only the
+  // mailbox call finds out about the second.
+  //
+  // The analytics reply reports the link too, and its five-minute cache is
+  // often already warm from the Analytics page while /auth/me is still in
+  // flight; deferring to it in that gap keeps a connected mailbox from
+  // flashing the "Connect Gmail" empty state over stats it already has. The
+  // scope test stays tied to the status answer, which is the only side that
+  // knows them, so an unanswered one never reads as "read access missing".
+  const gmailLinked = gmail?.gmail_linked ?? !!analytics?.gmail_linked;
+  const needsReauth =
+    (!!gmail?.gmail_linked && !gmail?.gmail_scopes.read) || !!analytics?.needs_reauth;
+  const gmailLive = gmailLinked && !needsReauth;
   const totals = analytics?.totals;
 
   const trend = (analytics?.daily ?? []).map((d) => ({ label: d.label, a: d.sent, b: d.received }));
@@ -273,12 +287,12 @@ export function Profile({
                   !statusKnown
                     ? null
                     : gmailLive
-                      ? analytics?.email_address || "Connected"
+                      ? gmail?.gmail_email || analytics?.email_address || "Connected"
                       : needsReauth
                         ? "Linked, but read access is missing"
                         : "Not linked"
                 }
-                loading={analyticsLoading}
+                loading={!statusKnown}
                 right={
                   !statusKnown ? undefined : gmailLive ? (
                     <Badge tone="success"><Check size={11} /> Live</Badge>

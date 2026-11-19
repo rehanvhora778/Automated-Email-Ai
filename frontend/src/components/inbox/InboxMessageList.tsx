@@ -184,13 +184,28 @@ export function InboxMessageList({
     );
   }
 
+  if (data?.rate_limited) {
+    // The grant is fine; Google is simply refusing for now. Showing the
+    // re-link prompt here would send the user somewhere that cannot help.
+    return (
+      <GlassCard className="p-2">
+        <EmptyState
+          icon={<MailWarning size={26} />}
+          title="Google is rate-limiting this mailbox"
+          description={data.error || "Gmail is temporarily refusing requests. This usually clears within a minute."}
+          action={<Button onClick={() => refetch()}><RefreshCw size={16} /> Try again</Button>}
+        />
+      </GlassCard>
+    );
+  }
+
   if (data?.needs_reauth) {
     return (
       <GlassCard className="p-2">
         <EmptyState
           icon={<MailWarning size={26} />}
           title="Re-link Gmail for full access"
-          description="Grant read + modify access so you can browse tabs and archive, delete, star and label messages."
+          description={data.error || "Grant read + modify access so you can browse tabs and archive, delete, star and label messages."}
           action={onLinkGmail ? <Button onClick={onLinkGmail}><RefreshCw size={16} /> Re-link Gmail</Button> : undefined}
         />
       </GlassCard>

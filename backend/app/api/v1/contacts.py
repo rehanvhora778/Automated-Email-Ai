@@ -6,9 +6,11 @@ times are all real.
 """
 from email.utils import getaddresses, parseaddr
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
+from app.api.deps import CurrentUser
 from app.api.v1.inbox import _load_gmail
+from app.services.gmail_service import NEEDS_REAUTH, RATE_LIMITED, describe_google_error
 
 router = APIRouter()
 
@@ -38,7 +40,12 @@ def _header(msg, name):
 
 
 @router.get("/list")
-async def contacts_list(user_id: str, max_results: int = 100):
+async def contacts_list(
+    user_id: CurrentUser,
+    # Every id listed here becomes a metadata fetch in the batch below, so the
+    # ceiling keeps one request from turning into a thousand calls to Gmail.
+    max_results: int = Query(100, ge=1, le=200),
+):
     service, _user_name, linked = _load_gmail(user_id)
     if not linked:
         return {"gmail_linked": False, "contacts": []}
@@ -80,7 +87,11 @@ async def contacts_list(user_id: str, max_results: int = 100):
 
     except Exception as e:
         print(f"contacts_list error: {e}")
-        return {"gmail_linked": True, "needs_reauth": True, "error": str(e), "contacts": []}
+        # Throttling looks like a lost grant from the status code alone, and
+        # sending someone to re-link over a quota fixes nothing.
+        kind, message = describe_google_error(e)
+        return {"gmail_linked": True, "needs_reauth": kind == NEEDS_REAUTH,
+                "rate_limited": kind == RATE_LIMITED, "error": message, "contacts": []}
 
     ranked = sorted(
         contacts.items(),

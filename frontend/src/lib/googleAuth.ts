@@ -1,9 +1,24 @@
 import { toast } from "sonner";
-import { supabase, supabaseUrl, supabaseAnonKey } from "../supabaseClient";
+import {
+  supabase,
+  supabaseUrl,
+  supabaseAnonKey,
+  supabaseConfigError,
+} from "../supabaseClient";
 import { SIGN_IN_SCOPES } from "./authScopes";
 
 /** Cached answer from /auth/v1/settings — the provider list rarely changes. */
 let googleEnabled: boolean | null = null;
+
+/**
+ * What the probe below managed to find out.
+ *
+ * "unreachable" is kept apart from "disabled" because the two need opposite
+ * things from the user: one is a switch in the Supabase dashboard, the other
+ * means the project itself is gone, paused or unconfigured and no amount of
+ * retrying the button will help.
+ */
+type ProviderProbe = "enabled" | "disabled" | "unreachable";
 
 /**
  * Ask Supabase whether the Google provider is switched on.
@@ -16,21 +31,44 @@ let googleEnabled: boolean | null = null;
  * no catch block can turn it into a friendly message.
  *
  * Checking first costs one small request and lets us fail on our own screen.
- * Returns true when the check itself fails, so a network blip does not block a
- * sign-in that would otherwise have worked.
+ * An ordinary unhappy response still counts as "enabled", so a hiccup at the
+ * auth service does not block a sign-in that would have worked.
  */
-async function isGoogleEnabled(): Promise<boolean> {
-  if (googleEnabled !== null) return googleEnabled;
+async function probeGoogleProvider(): Promise<ProviderProbe> {
+  // With no project URL the fetch below would resolve against this app's own
+  // origin, come back as the index page and read as a healthy auth service.
+  if (supabaseConfigError) return "unreachable";
+  if (googleEnabled !== null) return googleEnabled ? "enabled" : "disabled";
+
+  let res: Response;
   try {
-    const res = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+    res = await fetch(`${supabaseUrl}/auth/v1/settings`, {
       headers: { apikey: supabaseAnonKey },
     });
-    if (!res.ok) return true;
+  } catch {
+    // fetch only rejects when the request never completed at all — the host
+    // does not resolve, the project is gone, or there is no network. Sign-in
+    // cannot work either, so this must not fall through to the benefit of the
+    // doubt and send the browser off to a dead address.
+    return "unreachable";
+  }
+
+  if (!res.ok) return "enabled";
+  try {
     const settings = await res.json();
     googleEnabled = Boolean(settings?.external?.google);
-    return googleEnabled;
   } catch {
-    return true;
+    return "enabled";
+  }
+  return googleEnabled ? "enabled" : "disabled";
+}
+
+/** Just the host, because the full URL in a toast is noise. */
+function supabaseHost(): string {
+  try {
+    return new URL(supabaseUrl).host;
+  } catch {
+    return supabaseUrl;
   }
 }
 
@@ -49,7 +87,19 @@ async function isGoogleEnabled(): Promise<boolean> {
  * Resolves only on failure — on success the browser has already navigated away.
  */
 export async function startGoogleAuth(): Promise<void> {
-  if (!(await isGoogleEnabled())) {
+  const probe = await probeGoogleProvider();
+
+  if (probe === "unreachable") {
+    toast.error(
+      supabaseConfigError
+        ? `Sign-in isn't configured for this deployment — ${supabaseConfigError} See the browser console for what to set.`
+        : `Can't reach the authentication service at ${supabaseHost()}. The Supabase project may be paused or removed, or you may be offline.`,
+      { duration: 10000 }
+    );
+    throw new Error("supabase unreachable");
+  }
+
+  if (probe === "disabled") {
     toast.error(
       "Google sign-in isn't enabled yet. Turn it on in Supabase → Authentication → Providers → Google, then try again.",
       { duration: 8000 }

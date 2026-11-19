@@ -65,6 +65,17 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
     }
   };
 
+  // The spinner is still on when the browser leaves for Google, and coming
+  // back with the Back button can restore this page from the bfcache with its
+  // state exactly as it was — no remount, so nothing clears the flag and the
+  // button stays disabled for good. Whenever the page is shown again, it is by
+  // definition no longer waiting on Google.
+  useEffect(() => {
+    const stopWaiting = () => setGoogleLoading(false);
+    window.addEventListener('pageshow', stopWaiting);
+    return () => window.removeEventListener('pageshow', stopWaiting);
+  }, []);
+
   const cleanEmail = email.trim().toLowerCase();
 
   const validate = () => {
@@ -245,7 +256,8 @@ export default function Signup({ onSwitchToLogin }: { onSwitchToLogin: () => voi
         <GoogleButton onClick={handleGoogle} loading={googleLoading} label="Sign up with Google" />
         <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-500">
           <Check size={12} className="mt-0.5 shrink-0 text-emerald-400" />
-          Recommended — no code to enter, and the same step links your Gmail.
+          Recommended — no code to enter and no password to choose. Gmail is linked
+          separately, from Settings.
         </p>
       </div>
 

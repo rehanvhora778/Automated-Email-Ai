@@ -8,7 +8,7 @@ Four transports, picked by whichever credential is present, in this order:
 
   * **Resend**     — `RESEND_API_KEY`
   * **Brevo**      — `BREVO_API_KEY`
-  * **Gmail API**  — a linked Gmail account already stored in `profiles`
+  * **Gmail API**  — the mailbox `MAIL_GMAIL_PROFILE_ID` names, linked in `profiles`
   * **SMTP**       — `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM`
 
 Gmail API outranks SMTP deliberately. This is a Gmail application, so a
@@ -29,6 +29,7 @@ import re
 import base64
 import smtplib
 import ssl
+import time
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -36,9 +37,10 @@ import requests
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
-# Which linked account sends system mail. Unset, the oldest profile holding a
-# send-scoped token is used — deterministic, so the sender does not drift as
-# new people sign up.
+# Which linked account sends system mail, named by profile id. Unset, this
+# transport is unavailable: borrowing whichever mailbox happened to be linked
+# first drops other people's verification codes into that person's Sent folder,
+# which is not something to do unless an operator has asked for it by name.
 MAIL_GMAIL_PROFILE_ID = os.getenv("MAIL_GMAIL_PROFILE_ID", "").strip()
 
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
@@ -66,21 +68,36 @@ class MailerNotConfigured(RuntimeError):
 
 
 _gmail_sender_cache: dict | None = None
+# How long "there is no sender" is believed. A sender Google accepted holds for
+# the life of the process, but its absence is usually temporary — Supabase was
+# briefly unreachable, or Gmail had not been linked yet — so that answer has to
+# expire on its own rather than wait for a restart.
+_GMAIL_MISS_TTL_SECONDS = 60.0
+_gmail_sender_miss_until = 0.0
 
 
 def _gmail_candidates() -> list[dict]:
-    """Every stored token that could plausibly send, oldest profile first.
+    """The stored tokens allowed to send system mail, oldest profile first.
 
-    Ordered rather than arbitrary so the sending address is stable as people
-    sign up, and so an explicit MAIL_GMAIL_PROFILE_ID always wins.
+    None at all unless MAIL_GMAIL_PROFILE_ID names the mailbox. An operator has
+    to choose whose account the deployment speaks from, because that person
+    then finds strangers' verification codes sitting in their Sent folder.
     """
+    if not MAIL_GMAIL_PROFILE_ID:
+        return []
+
     try:
         from app.db.supabase import supabase
 
-        query = supabase.from_("profiles").select("id, full_name, gmail_token")
-        if MAIL_GMAIL_PROFILE_ID:
-            query = query.eq("id", MAIL_GMAIL_PROFILE_ID)
-        rows = query.order("created_at").execute().data or []
+        rows = (
+            supabase.from_("profiles")
+            .select("id, full_name, gmail_token")
+            .eq("id", MAIL_GMAIL_PROFILE_ID)
+            .order("created_at")
+            .execute()
+            .data
+            or []
+        )
     except Exception as e:
         print(f"mailer: could not look up a Gmail sender: {e}")
         return []
@@ -102,27 +119,24 @@ def gmail_sender(validate: bool = False) -> dict | None:
     access, and Google expires grants on unverified apps. With `validate` the
     candidates are tried in turn and the first one Google still accepts is
     chosen, so one dead token does not take email down while a live one sits
-    behind it. Resolved once per process; the answer only changes when someone
-    links or unlinks an account.
+    behind it.
+
+    An accepted sender is remembered for the life of the process, since it only
+    changes when the account is re-linked. A refusal is remembered for a minute
+    at most, so a database hiccup — or a first code requested before anyone had
+    linked Gmail — does not leave this deployment unable to send mail for as
+    long as the process happens to live.
     """
-    global _gmail_sender_cache
-    if _gmail_sender_cache is not None:
-        return _gmail_sender_cache or None
+    global _gmail_sender_cache, _gmail_sender_miss_until
+    if _gmail_sender_cache:
+        return _gmail_sender_cache
+    if time.monotonic() < _gmail_sender_miss_until:
+        return None
 
     candidates = _gmail_candidates()
     if not candidates:
-        _gmail_sender_cache = {}
+        _gmail_sender_miss_until = time.monotonic() + _GMAIL_MISS_TTL_SECONDS
         return None
-
-    if not MAIL_GMAIL_PROFILE_ID and candidates:
-        # Worth saying out loud: without a pinned profile this picks somebody's
-        # personal mailbox to send system mail from, and which mailbox depends
-        # on who signed up first. Fine as a last resort, wrong as a silent
-        # default — set MAIL_GMAIL_PROFILE_ID, or configure a mail provider.
-        print(
-            "mailer: no MAIL_GMAIL_PROFILE_ID set — falling back to a linked "
-            f"user's Gmail ({candidates[0]['id'][:8]}…) to send system mail"
-        )
 
     if not validate:
         # Cheap path for "is this transport available at all".
@@ -144,7 +158,7 @@ def gmail_sender(validate: bool = False) -> dict | None:
         return candidate
 
     print("mailer: every stored Gmail token was rejected")
-    _gmail_sender_cache = {}
+    _gmail_sender_miss_until = time.monotonic() + _GMAIL_MISS_TTL_SECONDS
     return None
 
 
@@ -180,14 +194,16 @@ def _require_config() -> None:
     if provider == "none":
         raise MailerNotConfigured(
             "Email sending is not configured. Set RESEND_API_KEY (or BREVO_API_KEY) "
-            "and MAIL_FROM, or the SMTP_* variables if this host allows outbound SMTP."
+            "and MAIL_FROM, or MAIL_GMAIL_PROFILE_ID to send through a linked Gmail "
+            "account, or the SMTP_* variables if this host allows outbound SMTP."
         )
     if provider in {"resend", "brevo"} and not MAIL_FROM:
         raise MailerNotConfigured(f"{provider} is configured but MAIL_FROM is not set.")
     if provider == "gmail_api" and not gmail_sender():
         raise MailerNotConfigured(
-            "No linked Gmail account with send permission is available to send from. "
-            "Link Gmail from Settings, or configure BREVO_API_KEY / RESEND_API_KEY."
+            "Sending through Gmail needs MAIL_GMAIL_PROFILE_ID set to the id of a "
+            "profile that has linked Gmail and granted send permission. Otherwise "
+            "set RESEND_API_KEY (or BREVO_API_KEY) and MAIL_FROM."
         )
     if provider == "smtp":
         missing = [
@@ -204,6 +220,21 @@ def _require_config() -> None:
             raise MailerNotConfigured(
                 "SMTP is selected but incomplete. Missing: " + ", ".join(missing)
             )
+
+
+def configuration_problem() -> str | None:
+    """Why mail cannot be sent right now, in the operator's words, or None.
+
+    Callers that refuse a request early should repeat the sentence send_email
+    would have raised rather than describe the setup themselves: only this
+    module knows which of the four transports is actually in play, and so which
+    credentials are the ones worth naming.
+    """
+    try:
+        _require_config()
+    except MailerNotConfigured as e:
+        return str(e)
+    return None
 
 
 class MailSendError(RuntimeError):

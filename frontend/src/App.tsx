@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 
-import axios from 'axios';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { supabase } from './supabaseClient';
+import { supabase, supabaseConfigError } from './supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Bot, User, LogOut, Plus, Mail,
@@ -17,7 +17,15 @@ import { QuickActionFab } from './components/layout/QuickActionFab';
 import type { LucideIcon } from 'lucide-react';
 import type { CopilotViewName } from './CopilotView';
 import type { ToolAction } from './lib/types';
-import { API_URL } from './lib/api';
+import {
+  apiClient,
+  apiErrorMessage,
+  apiErrorStatus,
+  beginGmailLink,
+  completeGmailLink,
+  getAccountStatus,
+  sendGmailMessage,
+} from './lib/api';
 import { useIsRecovering, beginLinkRecovery } from './lib/recoverySession';
 import { SIGN_IN_GRANTS_GMAIL } from './lib/authScopes';
 import { GmailConsentNotice } from './components/gmail/GmailConsentNotice';
@@ -49,8 +57,33 @@ interface ConversationSummary {
   updated_at: string;
 }
 
+/**
+ * Where the browser remembers which Gmail link attempt it started.
+ *
+ * sessionStorage, not localStorage: it is scoped to this tab and cleared when
+ * the tab closes, which is exactly the lifetime of one OAuth round trip.
+ */
+const GMAIL_LINK_STATE_KEY = 'gmail_link_state';
+
+/**
+ * Whether this page load has already dealt with whatever Google left in the URL.
+ *
+ * Module scope rather than a ref, because React's StrictMode mounts, unmounts
+ * and remounts every effect in development. The handler below consumes a
+ * single-use nonce, so running it twice means the second run finds the nonce
+ * already gone and accuses the user of starting the link somewhere else.
+ */
+let oauthReturnHandled = false;
+
 function App() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  // Resolving the stored session is a round trip (an expired token is
+  // refreshed first), and until it lands `user` is null. Rendering the sign-in
+  // screen during that window flashed the login form at people who were
+  // already signed in, and swallowed anything they started typing when the
+  // dashboard replaced it.
+  const [authReady, setAuthReady] = useState(false);
+  const queryClient = useQueryClient();
   const recovering = useIsRecovering();
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState<ChatMessage[]>([]);
@@ -61,6 +94,10 @@ function App() {
   const [pendingTool, setPendingTool] = useState<ToolAction | null>(null);
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  // Which account the Gmail prompt has already been decided for, so it is not
+  // re-armed on every token refresh or tab refocus.
+  const onboardingCheckedFor = useRef<string | null>(null);
+  const onboardingTimer = useRef<number | undefined>(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // Gates the redirect to Google so the unverified-app warning is explained first.
   const [showGmailNotice, setShowGmailNotice] = useState(false);
@@ -93,15 +130,11 @@ function App() {
    */
   const captureGoogleTokens = async (session: Session) => {
     try {
-      const { data } = await axios.post(
-        `${API_URL}/api/v1/auth/google/link`,
-        {
-          provider_token: session.provider_token,
-          provider_refresh_token: session.provider_refresh_token ?? null,
-          expires_in: session.expires_in ?? null,
-        },
-        { headers: { Authorization: `Bearer ${session.access_token}` } }
-      );
+      const { data } = await apiClient.post('/api/v1/auth/google/link', {
+        provider_token: session.provider_token,
+        provider_refresh_token: session.provider_refresh_token ?? null,
+        expires_in: session.expires_in ?? null,
+      });
       if (!data?.linked) {
         toast.warning(
           'Signed in, but Google did not return a refresh token. Re-link Gmail from Settings if mail features stop working.'
@@ -117,6 +150,7 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      setAuthReady(true);
       if (session?.user) fetchConversations(session.user.id);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -124,6 +158,25 @@ function App() {
       // this event. Without catching it the user is dropped on the dashboard
       // still holding the password they came here to change.
       if (_event === 'PASSWORD_RECOVERY') beginLinkRecovery();
+      setAuthReady(true);
+      // Signing out has to leave a blank slate. The auth screen renders from
+      // inside App, so App itself never unmounts and none of this state goes
+      // away on its own: on a shared machine the next person to sign in would
+      // otherwise see the previous one's conversation list, and their first
+      // message would be written into that thread.
+      if (!session?.user) {
+        setChat([]);
+        setConversations([]);
+        setActiveConversationId(null);
+        setShowOnboarding(false);
+        setShowCompose(false);
+        setView('dashboard');
+        onboardingCheckedFor.current = null;
+        if (onboardingTimer.current) {
+          clearTimeout(onboardingTimer.current);
+          onboardingTimer.current = undefined;
+        }
+      }
       setUser(session?.user ?? null);
       if (session?.user) fetchConversations(session.user.id);
       // Google's tokens ride along on the session for exactly one moment after
@@ -158,49 +211,30 @@ function App() {
     } catch (e) { console.log(e); }
   };
   
-// Pehle se maujood useEffect ke andar ya ek naya useEffect
+// Prompt a user who has not connected a mailbox yet — once per sign-in.
+//
+// Keyed on the user id rather than the user object: Supabase hands out a fresh
+// object on every token refresh and every time the tab regains focus, so an
+// effect that depends on the object re-ran constantly and re-opened this modal
+// on top of whatever the user was doing, seconds after they dismissed it.
 useEffect(() => {
-  if (user) {
-    checkOnboardingStatus(user.id);
-  }
-}, [user]);
+  const id = user?.id;
+  if (!id || onboardingCheckedFor.current === id) return;
 
-const checkOnboardingStatus = async (userId: string) => {
-  console.log("Onboarding check shuru ho raha hai for:", userId);
-  
-  try {
-    // Gmail Token check karo
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('gmail_token')
-      .eq('id', userId)
-      .maybeSingle();
-
-    console.log("Profile data mila:", profile);
-
-    // A token existing is not the same as Gmail being linked. A sign-in that
-    // only asked for identity leaves a valid Google token the Gmail API will
-    // reject, and treating that as linked hides this prompt from the very
-    // people who still have to press it. Tokens written before scopes were
-    // recorded have no scope field; those could only have come from a Gmail
-    // consent, so a refresh token stands in as proof.
-    const token = profile?.gmail_token as { scope?: string; refresh_token?: string } | null;
-    const gmailLinked = token
-      ? token.scope === undefined
-        ? Boolean(token.refresh_token)
-        : token.scope.includes('gmail.')
-      : false;
-
-    if (!gmailLinked) {
-      console.log("Popup trigger ho raha hai...");
-      setTimeout(() => {
-        setShowOnboarding(true);
-      }, 2000); // 2 second ka delay taaki page load ho jaye
-    }
-  } catch (error) {
-    console.error("Onboarding crash:", error);
-  }
-};
+  // Asked of the backend, not the database: whether Gmail is linked is a
+  // question about a token the browser is deliberately not allowed to read.
+  getAccountStatus()
+    .then((status) => {
+      // StrictMode runs effects twice in development, so both runs can be in
+      // flight at once. Whichever answer lands first decides.
+      if (onboardingCheckedFor.current === id) return;
+      onboardingCheckedFor.current = id;
+      if (status.gmail_linked) return;
+      // Let the dashboard paint before covering it.
+      onboardingTimer.current = window.setTimeout(() => setShowOnboarding(true), 2000);
+    })
+    .catch((e) => console.error('Could not check Gmail link status', e));
+}, [user?.id]);
   // --- FETCH CONVERSATION LIST (SIDEBAR) ---
   const fetchConversations = async (userId: string) => {
     try {
@@ -245,41 +279,115 @@ const checkOnboardingStatus = async (userId: string) => {
     setShowGmailNotice(false);
     if (!user) return;
     try {
-      const res = await axios.get(`${API_URL}/api/v1/actions/login-google?user_id=${user.id}`);
-      if (!res.data?.url) {
+      const { url, state } = await beginGmailLink();
+      if (!url || !state) {
         toast.error("Gmail linking is unavailable right now. Please try again later.");
         return;
       }
+      // Keep the nonce. When Google sends the browser back, this is what
+      // proves the consent that just happened belongs to the attempt this tab
+      // started — a link minted for one account and completed somewhere else
+      // reaches the final step and is refused.
+      sessionStorage.setItem(GMAIL_LINK_STATE_KEY, state);
       // Same tab: Google refuses to render its consent screen inside some
       // popup/blocker contexts, and a background tab is easy to lose. The
       // callback redirects straight back here when it is done.
-      window.location.href = res.data.url;
+      window.location.href = url;
     } catch (e) {
       // The backend returns an actionable message when OAuth is misconfigured
       // (for example the redirect URI still pointing at localhost). Showing it
       // beats a generic failure the user cannot do anything about.
-      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
-      toast.error(detail || "Couldn't start Gmail linking. Check your connection and try again.");
+      toast.error(
+        apiErrorMessage(e, "Couldn't start Gmail linking. Check your connection and try again.")
+      );
       console.error("Gmail link failed", e);
     }
   };
 
   /**
-   * Surface the result of the Gmail OAuth round-trip.
+   * Read whatever a Google round-trip left in the URL, and act on it.
    *
-   * The backend callback sends the browser back to `/?gmail=linked` (or
-   * `?gmail=error&reason=...`). Read it once, tell the user, then strip the
-   * params so a refresh does not replay the toast.
+   * Two different journeys land here. Supabase reports a failed *sign-in* with
+   * `error` / `error_description` — in the fragment under the implicit flow,
+   * in the query string under PKCE — and auth-js swallows those rather than
+   * raising them, so nothing else in the app would ever see them: cancelling
+   * at Google, or a redirect URL the project does not allow, simply dropped
+   * the user back on the login form with no explanation.
+   *
+   * The backend's Gmail *link* callback returns `?gmail=linked|error|pending`.
+   * `pending` is the interesting one: Google has approved and the backend is
+   * holding the token, but it belongs to nobody until this tab shows that it
+   * is the tab that started the attempt.
+   *
+   * Everything is read once and then stripped from the address bar, so a
+   * refresh does not replay a toast or re-submit a nonce.
    */
   useEffect(() => {
+    if (oauthReturnHandled) return;
     const params = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const authError = params.get('error') ?? hash.get('error');
     const status = params.get('gmail');
-    if (!status) return;
+    if (!authError && !status) return;
+    oauthReturnHandled = true;
 
-    if (status === 'linked') toast.success('Gmail linked successfully.');
-    else toast.error(params.get('reason') || 'Linking Gmail failed. Please try again.');
+    const clearUrl = () => window.history.replaceState({}, '', window.location.pathname);
 
-    window.history.replaceState({}, '', window.location.pathname);
+    if (authError) {
+      const description = params.get('error_description') ?? hash.get('error_description');
+      toast.error(
+        authError === 'access_denied'
+          ? 'Google sign-in was cancelled.'
+          : description
+            ? decodeURIComponent(description.replace(/\+/g, ' '))
+            : `Google sign-in failed (${authError}).`
+      );
+      clearUrl();
+      return;
+    }
+
+    if (status === 'linked') {
+      toast.success('Gmail linked successfully.');
+      clearUrl();
+      return;
+    }
+
+    if (status !== 'pending') {
+      toast.error(params.get('reason') || 'Linking Gmail failed. Please try again.');
+      clearUrl();
+      return;
+    }
+
+    const returned = params.get('state') ?? '';
+    const expected = sessionStorage.getItem(GMAIL_LINK_STATE_KEY);
+    sessionStorage.removeItem(GMAIL_LINK_STATE_KEY);
+    clearUrl();
+
+    if (!returned || returned !== expected) {
+      toast.error('That Gmail link was not started in this browser, so it was not applied.');
+      return;
+    }
+
+    completeGmailLink(returned)
+      .then((res) => {
+        // Every Gmail-backed screen asked and was told "not linked" while this
+        // was still in flight. Drop those answers so the dashboard, Settings
+        // and the inbox reflect the mailbox that now exists.
+        queryClient.invalidateQueries();
+        const who = res.email ? ` (${res.email})` : '';
+        if (res.linked) {
+          toast.success(`Gmail linked successfully${who}.`);
+        } else {
+          // No refresh token means access dies with the current hour and
+          // cannot be renewed, which is worth saying now rather than letting
+          // mail features stop working unexplained later.
+          toast.warning(
+            `Gmail connected${who}, but Google did not return a refresh token. ` +
+              'Re-link from Settings if mail features stop working.'
+          );
+        }
+      })
+      .catch((e) => toast.error(apiErrorMessage(e, 'Could not finish linking Gmail.')));
   }, []);
 
   // Open the compose modal, prefilled with the AI draft
@@ -293,28 +401,26 @@ const checkOnboardingStatus = async (userId: string) => {
 
   // Actually send the email (supports an optional user-picked file attachment)
   const submitEmail = async () => {
-    if (!composeTo) { alert("Please enter a recipient email."); return; }
+    if (!composeTo.trim()) { toast.error("Please enter a recipient email."); return; }
     setSending(true);
     try {
-      // multipart/form-data so we can include an arbitrary file attachment
-      const formData = new FormData();
-      formData.append('user_id', user!.id);
-      formData.append('to_email', composeTo);
-      formData.append('subject', composeSubject || "Smart Email Agent Draft");
-      formData.append('body', composeBody);
-      if (composeFile) formData.append('file', composeFile);
-
-      const res = await axios.post(`${API_URL}/api/v1/actions/send-email`, formData);
-      if (res.data.status === "success") {
-        alert("🚀 Email Sent!");
-        setShowCompose(false);
-      }
+      await sendGmailMessage({
+        to: composeTo.trim(),
+        subject: composeSubject || "Smart Email Agent Draft",
+        body: composeBody,
+        file: composeFile,
+      });
+      toast.success("Email sent.");
+      setShowCompose(false);
     } catch (err) {
       console.error(err);
-      const msg = axios.isAxiosError(err)
-        ? err.response?.data?.detail ?? "Error sending email."
-        : "Error sending email.";
-      alert("❌ " + msg);
+      // 401 here means the stored Google grant is gone or was never there, so
+      // point at the fix instead of reporting it as a send failure.
+      const message =
+        apiErrorStatus(err) === 401
+          ? "Gmail isn't linked any more. Link it again to send mail."
+          : apiErrorMessage(err, "Could not send the email. Please try again.");
+      toast.error(message);
     }
     setSending(false);
   };
@@ -326,8 +432,7 @@ const checkOnboardingStatus = async (userId: string) => {
     setMessage('');
     setChat(prev => [...prev, { role: 'user', text: currentMessage }]);
     try {
-      const response = await axios.post(`${API_URL}/api/v1/chat/`, {
-        user_id: user!.id,
+      const response = await apiClient.post('/api/v1/chat/', {
         message: currentMessage,
         conversation_id: activeConversationId,
         // The user's own calendar date, so "tomorrow" in a draft resolves
@@ -341,9 +446,53 @@ const checkOnboardingStatus = async (userId: string) => {
       // Keep the thread active (a new conversation returns its fresh id)
       if (response.data?.conversation_id) setActiveConversationId(response.data.conversation_id);
       fetchConversations(user!.id);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      // The bubble the user just sent stays on screen either way, so without
+      // this the assistant simply never answers and nothing says why.
+      toast.error(apiErrorMessage(e, 'The assistant could not answer. Please try again.'));
+    }
     setLoading(false);
   };
+
+  // With no Supabase project configured there is no sign-in to offer, and the
+  // login form would just fail on every press with a network error that names
+  // nothing. Say what is missing instead — this is the one screen that can.
+  if (supabaseConfigError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#050505] p-6">
+        <div className="max-w-md rounded-[2rem] border border-white/10 bg-[#111] p-8 text-center">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400">
+            <SettingsIcon size={22} />
+          </div>
+          <h1 className="mb-2 text-xl font-bold tracking-tight text-white">
+            This deployment isn&apos;t configured yet
+          </h1>
+          <p className="mb-5 text-sm leading-relaxed text-neutral-400">
+            {supabaseConfigError} Set <code className="text-neutral-200">VITE_SUPABASE_URL</code> and{' '}
+            <code className="text-neutral-200">VITE_SUPABASE_ANON_KEY</code> in the hosting
+            environment, then redeploy — those values are compiled into the bundle, so changing
+            them without a rebuild has no effect.
+          </p>
+          <p className="text-xs text-neutral-600">
+            Signing in, signing up and every profile read depend on this.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Nothing is known about the session yet. Showing the sign-in screen here
+  // would be a guess, and the wrong one for anyone already signed in.
+  if (!authReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#050505]">
+        <div className="flex items-center gap-3 text-sm font-medium text-neutral-600">
+          <Moon size={16} className="animate-spin" /> Loading your workspace…
+        </div>
+      </div>
+    );
+  }
 
   // A password reset signs the user in at the code step, before the new
   // password has been set. Keep the auth screen up until that flow says it is

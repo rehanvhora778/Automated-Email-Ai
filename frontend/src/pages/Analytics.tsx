@@ -93,12 +93,27 @@ export function Analytics({
             }
           />
         </GlassCard>
+      ) : data?.rate_limited ? (
+        // Throttling is not a broken link, so this must not offer to re-link:
+        // the numbers below would otherwise render as a mailbox full of zeros.
+        <GlassCard className="p-2">
+          <EmptyState
+            icon={<MailWarning size={26} />}
+            title="Google is rate-limiting this mailbox"
+            description={data.error || "Gmail is temporarily refusing requests. This usually clears within a minute."}
+            action={
+              <Button onClick={() => refetch()}>
+                <RefreshCw size={16} /> Try again
+              </Button>
+            }
+          />
+        </GlassCard>
       ) : data?.needs_reauth ? (
         <GlassCard className="p-2">
           <EmptyState
             icon={<MailWarning size={26} />}
             title="Re-link Gmail for read access"
-            description="Your Gmail was linked with send-only permission. Re-link once to grant read access so analytics can be computed."
+            description={data.error || "Your Gmail was linked with send-only permission. Re-link once to grant read access so analytics can be computed."}
             action={
               onLinkGmail ? (
                 <Button onClick={onLinkGmail}>

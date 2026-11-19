@@ -19,7 +19,6 @@ export type ReplyStyle =
 export type ReplyStyles = Partial<Record<ReplyStyle, string>>;
 
 export interface GenerateReplyPayload {
-  user_id?: string | null;
   original_email: string;
   tone?: string;
   context?: string;
@@ -158,6 +157,9 @@ export interface InboxStats {
 export interface InboxSummaryResponse extends Partial<InboxBriefing> {
   gmail_linked: boolean;
   needs_reauth?: boolean;
+  /** Google is throttling this account. Nothing is wrong with the link;
+   *  re-linking would change nothing, so the UI must not offer it. */
+  rate_limited?: boolean;
   error?: string;
   user_name: string;
   stats?: InboxStats;
@@ -259,6 +261,9 @@ export interface InboxMessage {
 export interface InboxMessagesResponse {
   gmail_linked: boolean;
   needs_reauth?: boolean;
+  /** Google is throttling this account. Nothing is wrong with the link;
+   *  re-linking would change nothing, so the UI must not offer it. */
+  rate_limited?: boolean;
   error?: string;
   messages: InboxMessage[];
 }
@@ -296,6 +301,9 @@ export interface AnalyticsSender {
 export interface AnalyticsResponse {
   gmail_linked: boolean;
   needs_reauth?: boolean;
+  /** Google is throttling this account. Nothing is wrong with the link;
+   *  re-linking would change nothing, so the UI must not offer it. */
+  rate_limited?: boolean;
   error?: string;
   email_address?: string;
   totals?: { messages: number; threads: number; inbox: number; unread: number };
@@ -323,6 +331,9 @@ export interface GmailContact {
 export interface ContactsResponse {
   gmail_linked: boolean;
   needs_reauth?: boolean;
+  /** Google is throttling this account. Nothing is wrong with the link;
+   *  re-linking would change nothing, so the UI must not offer it. */
+  rate_limited?: boolean;
   error?: string;
   contacts: GmailContact[];
 }
@@ -344,6 +355,9 @@ export interface GmailNotification {
 export interface NotificationsResponse {
   gmail_linked: boolean;
   needs_reauth?: boolean;
+  /** Google is throttling this account. Nothing is wrong with the link;
+   *  re-linking would change nothing, so the UI must not offer it. */
+  rate_limited?: boolean;
   error?: string;
   notifications: GmailNotification[];
 }

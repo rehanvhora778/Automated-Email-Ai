@@ -9,8 +9,11 @@
  * are designed to be shipped to the browser and are guarded by row-level
  * security.
  *
- * All three are optional: they fall back to local development defaults, so a
- * fresh clone runs with no .env file at all.
+ * VITE_API_URL is optional — it falls back to http://localhost:8000, so a
+ * fresh clone runs against a local backend with no .env file. The two Supabase
+ * values are required: nothing is compiled in as a fallback, because a stale
+ * literal for a project that no longer exists fails silently, and a build
+ * without them renders a configuration notice instead of the app.
  */
 interface ImportMetaEnv {
   /** Backend base URL, e.g. https://your-api.onrender.com */

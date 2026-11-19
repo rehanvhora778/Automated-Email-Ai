@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Settings as SettingsIcon, Mail, KeyRound, ShieldCheck, LogOut,
@@ -10,6 +10,8 @@ import { GlassCard } from "../components/ui/GlassCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { supabase } from "../supabaseClient";
+import { apiErrorMessage, unlinkGmail } from "../lib/api";
+import { useAccountStatus } from "../lib/hooks";
 import { PasswordChecklist } from "../components/auth/PasswordChecklist";
 import { passwordIsValid } from "../lib/passwordPolicy";
 
@@ -35,16 +37,6 @@ function SectionTitle({ icon, title, desc }: { icon: ReactNode; title: string; d
   );
 }
 
-/** What the linked Google token is allowed to do, parsed from its OAuth scopes. */
-function tokenCapabilities(scope?: string) {
-  const s = scope ?? "";
-  return {
-    send: s.includes("gmail.send"),
-    read: s.includes("gmail.readonly"),
-    actions: s.includes("gmail.modify"),
-  };
-}
-
 export function Settings({
   userId,
   userEmail,
@@ -64,23 +56,8 @@ export function Settings({
   const isPasswordAccount = (provider ?? "email") !== "google";
   const queryClient = useQueryClient();
 
-  // --- Real Gmail link status (reads the user's own profile row via RLS) ---
-  const gmailStatus = useQuery({
-    queryKey: ["gmail-status", userId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("gmail_token")
-        .eq("id", userId)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
-      const token = data?.gmail_token as { scope?: string } | null;
-      return { linked: !!token, ...tokenCapabilities(token?.scope) };
-    },
-    enabled: !!userId,
-    staleTime: 0,
-    refetchOnWindowFocus: true, // picks up the new token when you return from the Google tab
-  });
+  // --- Real Gmail link status (the backend answers; the token stays there) ---
+  const gmailStatus = useAccountStatus(userId);
 
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
@@ -92,16 +69,25 @@ export function Settings({
       return;
     }
     setUnlinking(true);
-    const { error } = await supabase.from("profiles").update({ gmail_token: null }).eq("id", userId);
-    setUnlinking(false);
-    setConfirmUnlink(false);
-    if (error) {
-      toast.error(`Could not unlink Gmail: ${error.message}`);
-      return;
+    try {
+      // Forgetting the token here would leave the grant alive at Google: the
+      // app would stay listed under the user's third-party access and any
+      // copy of the token that got out would still open the mailbox. The
+      // backend revokes it with Google first, then clears the row.
+      const { revoked } = await unlinkGmail();
+      // Every surface in the app reads Gmail, so drop all cached data.
+      queryClient.invalidateQueries();
+      toast.success(
+        revoked
+          ? "Gmail unlinked and access revoked at Google. Link it again anytime."
+          : "Gmail unlinked here, but Google did not confirm the revocation — remove this app under your Google account's third-party access to be certain."
+      );
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Could not unlink Gmail. Try again in a moment."));
+    } finally {
+      setUnlinking(false);
+      setConfirmUnlink(false);
     }
-    // Every surface in the app reads Gmail, so drop all cached data.
-    queryClient.invalidateQueries();
-    toast.success("Gmail unlinked. Link it again anytime.");
   };
 
   // --- Password reset (email/password accounts only) ---
@@ -152,7 +138,15 @@ export function Settings({
     toast.success("Password updated. Use the new password next time you sign in.");
   };
 
-  const s = gmailStatus.data;
+  // Mapped rather than used raw so the markup below keeps naming the three
+  // capabilities the way the user sees them on screen.
+  const status = gmailStatus.data;
+  const s = status && {
+    linked: status.gmail_linked,
+    send: status.gmail_scopes.send,
+    read: status.gmail_scopes.read,
+    actions: status.gmail_scopes.modify,
+  };
   const missingScopes = s?.linked && (!s.read || !s.actions || !s.send);
 
   const inputClass =

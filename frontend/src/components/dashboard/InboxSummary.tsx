@@ -102,11 +102,24 @@ export function InboxSummary({
             ) : undefined
           }
         />
+      ) : data?.rate_limited ? (
+        // A throttled mailbox is a healthy one. Offering "re-link" here would
+        // send the user through a consent screen that fixes nothing.
+        <EmptyState
+          icon={<MailWarning size={26} />}
+          title="Google is rate-limiting this mailbox"
+          description={data.error || "Gmail is temporarily refusing requests. This usually clears within a minute."}
+          action={
+            <Button onClick={() => refetch()}>
+              <RefreshCw size={16} /> Try again
+            </Button>
+          }
+        />
       ) : data?.needs_reauth ? (
         <EmptyState
           icon={<MailWarning size={26} />}
           title="Re-link Gmail for read access"
-          description="Your Gmail was linked with send-only permission. Re-link once to grant read access so AI can summarize your inbox."
+          description={data.error || "Your Gmail was linked with send-only permission. Re-link once to grant read access so AI can summarize your inbox."}
           action={
             onLinkGmail ? (
               <Button onClick={onLinkGmail}>

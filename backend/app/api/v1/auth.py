@@ -30,6 +30,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from app.api.deps import CurrentUser, resolve_user_id
 from app.db.supabase import supabase
 
 load_dotenv()
@@ -51,40 +52,16 @@ class GoogleTokenPayload(BaseModel):
 def _user_id_from_bearer(authorization: str | None) -> str:
     """Resolve the caller's user id from their Supabase access token.
 
-    The user id is deliberately NOT taken from the request body. This endpoint
-    writes Gmail credentials onto a profile row, so trusting a client-supplied
+    The user id is deliberately NOT taken from the request body. These routes
+    write Gmail credentials onto a profile row, so trusting a client-supplied
     id would let anyone attach their own Google tokens to somebody else's
     account. Asking Supabase who the token belongs to is the only safe source.
+
+    Every other router now needs the same answer, so the implementation lives
+    in app/api/deps.py with the short-lived cache that keeps a dashboard load
+    from costing one Supabase round trip per request.
     """
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    token = authorization.split(" ", 1)[1].strip()
-
-    if not SUPABASE_URL or not SERVICE_KEY:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-
-    try:
-        resp = requests.get(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
-    except requests.exceptions.RequestException:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Could not reach Supabase. The project may be paused — "
-                "restore it at https://supabase.com/dashboard, then try again."
-            ),
-        )
-
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    user_id = (resp.json() or {}).get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Could not identify the signed-in user")
-    return user_id
+    return resolve_user_id(authorization)
 
 
 def _granted_scopes(access_token: str) -> str:
@@ -131,6 +108,32 @@ def token_grants_gmail(token: dict | None) -> bool:
     if scope is None:
         return bool(token.get("refresh_token"))
     return "gmail." in scope
+
+
+def gmail_scope_flags(token: dict | None) -> dict:
+    """Which mailbox permissions a stored grant actually carries.
+
+    Settings shows a per-permission breakdown, and it used to work this out in
+    the browser by reading the whole `gmail_token` column — which meant posting
+    a long-lived Google refresh token to the tab on every page load just to
+    decide which three ticks to draw. The answer belongs here, where the token
+    already is.
+
+    A token written before scopes were recorded has no `scope` key. Those could
+    only have come from a full Gmail consent, so treat them as carrying the set
+    the app asks for rather than showing someone a healthy link as broken.
+    """
+    if not token:
+        return {"send": False, "read": False, "modify": False}
+    scope = token.get("scope")
+    if scope is None:
+        granted = bool(token.get("refresh_token"))
+        return {"send": granted, "read": granted, "modify": granted}
+    return {
+        "send": "gmail.send" in scope,
+        "read": "gmail.readonly" in scope,
+        "modify": "gmail.modify" in scope,
+    }
 
 
 @router.post("/google/link")
@@ -194,9 +197,8 @@ async def link_google_tokens(
 
 
 @router.get("/me")
-async def me(authorization: str | None = Header(default=None)):
+async def me(user_id: CurrentUser):
     """The signed-in user's profile, including whether Gmail is linked."""
-    user_id = _user_id_from_bearer(authorization)
 
     def _select(columns: str):
         return supabase.from_("profiles").select(columns).eq("id", user_id).execute()
@@ -228,4 +230,9 @@ async def me(authorization: str | None = Header(default=None)):
         "full_name": row.get("full_name"),
         "avatar_url": row.get("avatar_url"),
         "gmail_linked": token_grants_gmail(token),
+        # Recorded when the mailbox was linked. Naming the connected address
+        # lets someone who authorised the wrong Google identity see it at once,
+        # instead of wondering why the inbox looks unfamiliar.
+        "gmail_email": token.get("email"),
+        "gmail_scopes": gmail_scope_flags(token),
     }

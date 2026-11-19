@@ -1,4 +1,5 @@
 import axios from "axios";
+import { supabase } from "../supabaseClient";
 import type {
   GenerateReplyPayload,
   ReplyStyles,
@@ -40,6 +41,34 @@ if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_URL
 }
 
 export const apiClient = axios.create({ baseURL: API_URL });
+
+/**
+ * The Supabase access token for the current session, or null when signed out.
+ *
+ * `getSession()` reads from local storage and refreshes the token when it has
+ * expired, so this is also what keeps a long-open tab's requests authorised.
+ */
+export async function authHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Attach the session to every backend call.
+ *
+ * The backend used to identify the caller by a `user_id` sent in the query
+ * string, which meant anyone holding a user's UUID — and those are not secret,
+ * they end up in browser history, logs and Referer headers — could read that
+ * person's mailbox or send mail as them. Identity now comes from this token
+ * and nothing else; the `userId` arguments below are kept only because callers
+ * use them as React Query cache keys.
+ */
+apiClient.interceptors.request.use(async (config) => {
+  const header = await authHeader();
+  if (header.Authorization) config.headers.set("Authorization", header.Authorization);
+  return config;
+});
 
 // ---- Reading a failed request ------------------------------------------
 //
@@ -100,9 +129,7 @@ export async function generateReplies(
 export async function getInboxSummary(
   userId: string
 ): Promise<InboxSummaryResponse> {
-  const { data } = await apiClient.get("/api/v1/inbox/summary", {
-    params: { user_id: userId },
-  });
+  const { data } = await apiClient.get("/api/v1/inbox/summary");
   return data as InboxSummaryResponse;
 }
 
@@ -112,7 +139,7 @@ export async function getInboxMessages(
   tab: string
 ): Promise<InboxMessagesResponse> {
   const { data } = await apiClient.get("/api/v1/inbox/messages", {
-    params: { user_id: userId, tab },
+    params: { tab },
   });
   return data as InboxMessagesResponse;
 }
@@ -121,9 +148,7 @@ export async function getInboxMessages(
 export async function getEmailAnalytics(
   userId: string
 ): Promise<AnalyticsResponse> {
-  const { data } = await apiClient.get("/api/v1/analytics/overview", {
-    params: { user_id: userId },
-  });
+  const { data } = await apiClient.get("/api/v1/analytics/overview");
   return data as AnalyticsResponse;
 }
 
@@ -131,9 +156,7 @@ export async function getEmailAnalytics(
 export async function getGmailContacts(
   userId: string
 ): Promise<ContactsResponse> {
-  const { data } = await apiClient.get("/api/v1/contacts/list", {
-    params: { user_id: userId },
-  });
+  const { data } = await apiClient.get("/api/v1/contacts/list");
   return data as ContactsResponse;
 }
 
@@ -141,9 +164,7 @@ export async function getGmailContacts(
 export async function getGmailNotifications(
   userId: string
 ): Promise<NotificationsResponse> {
-  const { data } = await apiClient.get("/api/v1/notifications/list", {
-    params: { user_id: userId },
-  });
+  const { data } = await apiClient.get("/api/v1/notifications/list");
   return data as NotificationsResponse;
 }
 
@@ -153,7 +174,6 @@ export async function markNotificationsRead(
   messageIds: string[]
 ): Promise<void> {
   await apiClient.post("/api/v1/notifications/read_all", {
-    user_id: userId,
     message_ids: messageIds,
   });
 }
@@ -165,7 +185,6 @@ export async function runInboxAction(
   action: InboxActionType
 ): Promise<void> {
   await apiClient.post("/api/v1/inbox/action", {
-    user_id: userId,
     message_id: messageId,
     action,
   });
@@ -224,13 +243,38 @@ export async function streamTool(
 ): Promise<string> {
   const res = await fetch(`${API_URL}/api/v1/ai/tool/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // fetch bypasses the axios interceptor, so the session has to be attached
+    // by hand here or the backend answers 401.
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify(payload),
     signal,
   });
 
   if (!res.ok || !res.body) {
-    const detail = await res.text().catch(() => "");
+    // FastAPI serialises an error as {"detail": "..."}, so the raw body text
+    // is a JSON envelope. Showing it unparsed put `{"detail":"…"}` in front of
+    // the user; pull the message out and fall back to the text only if it is
+    // not the shape we expect.
+    const body = await res.text().catch(() => "");
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed?.detail === "string") {
+        detail = parsed.detail;
+      } else if (Array.isArray(parsed?.detail)) {
+        // A 422 from FastAPI's own validation is a list of error objects, not
+        // a sentence — which is what an over-length paste produces now that
+        // the AI fields are bounded. Read the first one rather than putting
+        // a JSON array in front of the user.
+        const first = parsed.detail[0];
+        detail =
+          res.status === 422
+            ? "That text is too long to process. Try a shorter excerpt."
+            : (typeof first?.msg === "string" && first.msg) || body;
+      }
+    } catch {
+      /* not JSON — use the text as-is */
+    }
     throw new Error(detail || `Request failed (${res.status})`);
   }
 
@@ -254,4 +298,81 @@ export async function streamTool(
     onChunk(tail);
   }
   return full;
+}
+
+// ---- Account + Gmail linking -------------------------------------------
+
+/** Who the backend thinks you are, and whether your mailbox is connected. */
+export interface AccountStatus {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  gmail_linked: boolean;
+  /** The Google address that was linked, when the backend could read it. */
+  gmail_email: string | null;
+  /** Which mailbox permissions the stored grant actually carries. */
+  gmail_scopes: { send: boolean; read: boolean; modify: boolean };
+}
+
+/**
+ * The signed-in user's account state, from the backend rather than the browser.
+ *
+ * Gmail status used to be read straight out of `profiles.gmail_token` with the
+ * anon key, which meant a long-lived Google refresh token was shipped to the
+ * tab on every page load purely to decide whether to show a button. The token
+ * now stays server-side and this returns only the booleans the UI needs.
+ */
+export async function getAccountStatus(): Promise<AccountStatus> {
+  const { data } = await apiClient.get("/api/v1/auth/me");
+  return data as AccountStatus;
+}
+
+/** Step 1 of linking: ask the backend for a consent URL and its state nonce. */
+export async function beginGmailLink(): Promise<{ url: string; state: string }> {
+  const { data } = await apiClient.get("/api/v1/actions/login-google");
+  return data as { url: string; state: string };
+}
+
+/**
+ * Step 3 of linking: prove this is the browser that started the flow.
+ *
+ * Google hands its authorization code to the backend, which exchanges it and
+ * parks the result against the state nonce — it does not attach it to anyone
+ * yet. This call is what attaches it, and it only succeeds when the caller's
+ * session matches the account the attempt was minted for. Without that step a
+ * link could be aimed at someone else's account.
+ */
+export async function completeGmailLink(
+  state: string
+): Promise<{ linked: boolean; email: string | null; scope: string; reason?: string }> {
+  const { data } = await apiClient.post("/api/v1/actions/complete-link", { state });
+  return data as { linked: boolean; email: string | null; scope: string; reason?: string };
+}
+
+/**
+ * Disconnect the mailbox, at Google as well as here.
+ *
+ * Clearing the stored row on its own left the grant live on Google's side: the
+ * app kept appearing under the user's third-party access list, and any copy of
+ * the token that had leaked still opened the mailbox. `revoked` reports whether
+ * Google accepted the revocation.
+ */
+export async function unlinkGmail(): Promise<{ unlinked: boolean; revoked: boolean }> {
+  const { data } = await apiClient.post("/api/v1/actions/unlink-google");
+  return data as { unlinked: boolean; revoked: boolean };
+}
+
+/** Send mail through the user's linked Gmail account, with an optional attachment. */
+export async function sendGmailMessage(input: {
+  to: string;
+  subject: string;
+  body: string;
+  file?: File | null;
+}): Promise<void> {
+  const form = new FormData();
+  form.append("to_email", input.to);
+  form.append("subject", input.subject);
+  form.append("body", input.body);
+  if (input.file) form.append("file", input.file);
+  await apiClient.post("/api/v1/actions/send-email", form);
 }

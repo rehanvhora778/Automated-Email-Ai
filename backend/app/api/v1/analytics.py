@@ -9,8 +9,11 @@ from datetime import datetime, timedelta
 from email.utils import parseaddr
 
 from fastapi import APIRouter
+from googleapiclient.errors import HttpError
 
+from app.api.deps import CurrentUser
 from app.api.v1.inbox import _load_gmail
+from app.services.gmail_service import NEEDS_REAUTH, RATE_LIMITED, describe_google_error
 
 router = APIRouter()
 
@@ -44,11 +47,20 @@ def _count(service, query, cap=COUNT_CAP):
 
 
 def _label_total(service, label_id, field="messagesTotal"):
+    """Message count carried by one Gmail system label.
+
+    A label the mailbox does not have is honestly zero — Gmail only creates a
+    category label once something lands in it. Every other failure means the
+    number is unknown, not nought, so it travels up to the route's handler
+    instead of being dressed up as an empty mailbox.
+    """
     try:
         label = service.users().labels().get(userId="me", id=label_id).execute()
-        return label.get(field, 0)
-    except Exception:
-        return 0
+    except HttpError as e:
+        if getattr(getattr(e, "resp", None), "status", None) == 404:
+            return 0
+        raise
+    return label.get(field, 0)
 
 
 def _top_senders(service, max_messages=50, top_n=5):
@@ -93,7 +105,7 @@ def _top_senders(service, max_messages=50, top_n=5):
 
 
 @router.get("/overview")
-async def analytics_overview(user_id: str):
+async def analytics_overview(user_id: CurrentUser):
     service, _user_name, linked = _load_gmail(user_id)
     if not linked:
         return {"gmail_linked": False}
@@ -131,9 +143,13 @@ async def analytics_overview(user_id: str):
         top_senders = _top_senders(service)
 
     except Exception as e:
-        # Most commonly an old token without the readonly scope.
+        # A quota and a revoked grant both arrive here, and only one of them is
+        # fixed by linking Gmail again, so the answer says which it was. The
+        # raw text can carry internal ids and stays in the log.
         print(f"analytics_overview error: {e}")
-        return {"gmail_linked": True, "needs_reauth": True, "error": str(e)}
+        kind, message = describe_google_error(e)
+        return {"gmail_linked": True, "needs_reauth": kind == NEEDS_REAUTH,
+                "rate_limited": kind == RATE_LIMITED, "error": message}
 
     return {
         "gmail_linked": True,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from './supabaseClient';
@@ -8,9 +8,10 @@ import { AuthShell, GoogleButton, OrDivider, authInputClass } from './components
 /**
  * Sign-in screen. Two routes in: Google, or an existing email/password account.
  *
- * Google is listed first because it also grants Gmail access in the same
- * consent — a password account can sign in fine, but has to link Gmail
- * separately from Settings before the mail features do anything.
+ * Google is listed first because it is the shortest way in: one tap, nothing
+ * to remember, and the address is already verified. It asks for identity only
+ * — mailbox access is a separate consent, requested from Settings — so either
+ * route leaves Gmail to be linked before the mail features do anything.
  *
  * On success App's onAuthStateChange picks up the session and replaces this
  * screen, so there is no callback to wire up here.
@@ -37,6 +38,17 @@ export default function Login({
       setGoogleLoading(false); // startGoogleAuth already surfaced the reason
     }
   };
+
+  // The spinner is still on when the browser leaves for Google, and coming
+  // back with the Back button can restore this page from the bfcache with its
+  // state exactly as it was — no remount, so nothing clears the flag and the
+  // button stays disabled for good. Whenever the page is shown again, it is by
+  // definition no longer waiting on Google.
+  useEffect(() => {
+    const stopWaiting = () => setGoogleLoading(false);
+    window.addEventListener('pageshow', stopWaiting);
+    return () => window.removeEventListener('pageshow', stopWaiting);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

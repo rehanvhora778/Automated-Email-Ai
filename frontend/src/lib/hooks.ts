@@ -5,6 +5,7 @@ import {
   getEmailAnalytics,
   getGmailContacts,
   getGmailNotifications,
+  getAccountStatus,
 } from "./api";
 import { supabase } from "../supabaseClient";
 
@@ -69,6 +70,9 @@ export function useAccountProfile(userId?: string) {
     queryFn: async (): Promise<AccountProfile> => {
       const [profileRes, sessionRes] = await Promise.all([
         supabase
+          // Columns are named one by one on purpose. The browser holds no
+          // privilege on the stored Google grant, so a `select("*")` would be
+          // refused outright and take these two harmless facts down with it.
           .from("profiles")
           .select("full_name, created_at")
           .eq("id", userId)
@@ -88,5 +92,24 @@ export function useAccountProfile(userId?: string) {
     },
     enabled: !!userId,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Whether Gmail is linked, and what the stored grant may do.
+ *
+ * Answered by the backend rather than by reading `profiles.gmail_token` here:
+ * that shipped a long-lived Google refresh token to the tab on every load,
+ * purely to decide which buttons to draw. Kept permanently stale and refetched
+ * on focus because the user leaves for Google's consent screen and comes back
+ * to a tab that must notice the link immediately.
+ */
+export function useAccountStatus(userId?: string) {
+  return useQuery({
+    queryKey: ["account-status", userId],
+    queryFn: getAccountStatus,
+    enabled: !!userId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }

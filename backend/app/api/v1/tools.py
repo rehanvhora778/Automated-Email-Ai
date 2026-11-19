@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.api.deps import CurrentUser
 from app.services.ai_service import SecretaryAI
 from app.services import ml_service
 
@@ -32,12 +33,20 @@ ALLOWED_ACTIONS = {
 
 class ToolRequest(BaseModel):
     action: str
-    input: str = ""
-    context: Optional[str] = ""
+    # Both fields go straight into the Mistral prompt, so they are bounded
+    # here: an oversized body is rejected by validation before any call is
+    # made rather than after the tokens have been spent.
+    input: str = Field("", max_length=20000)
+    context: Optional[str] = Field("", max_length=4000)
 
 
+# The writing tools below proxy this deployment's single Mistral key -- the
+# quota that chat, smart replies and the inbox briefing all share -- so the
+# caller has to hold a session rather than merely know the URL. The /classify
+# routes run locally but take the same session; only /classify/health is left
+# open, since it returns stored model metrics the AI Tools page shows as badges.
 @router.post("/tool")
-async def run_tool(req: ToolRequest):
+async def run_tool(req: ToolRequest, user_id: CurrentUser):
     if req.action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action '{req.action}'")
 
@@ -63,7 +72,7 @@ async def run_tool(req: ToolRequest):
 
 
 @router.post("/tool/stream")
-async def run_tool_stream(req: ToolRequest):
+async def run_tool_stream(req: ToolRequest, user_id: CurrentUser):
     if req.action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action '{req.action}'")
 
@@ -87,11 +96,11 @@ async def run_tool_stream(req: ToolRequest):
 
 
 class ClassifyRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="Raw email text (subject + body)")
+    text: str = Field(..., min_length=1, max_length=20000, description="Raw email text (subject + body)")
 
 
 @router.post("/classify/spam")
-async def classify_spam(req: ClassifyRequest):
+async def classify_spam(req: ClassifyRequest, user_id: CurrentUser):
     """Score an email with the locally trained classifier — no LLM, no network.
 
     Returns a verdict, a calibrated confidence, and the terms in this specific
@@ -114,7 +123,7 @@ async def classify_spam(req: ClassifyRequest):
 
 
 @router.post("/classify/phishing")
-async def classify_phishing(req: ClassifyRequest):
+async def classify_phishing(req: ClassifyRequest, user_id: CurrentUser):
     """Score an email for phishing with the locally trained classifier.
 
     A different question from spam: junk mail is *unwanted*, phishing is an

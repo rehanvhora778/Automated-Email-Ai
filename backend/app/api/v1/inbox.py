@@ -8,14 +8,21 @@ or sends. Mutations live behind `/action`, which the user triggers explicitly.
 """
 from email.utils import parseaddr
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.api.deps import CurrentUser
 from app.db.supabase import supabase
 from app.services.ai_service import SecretaryAI
-from app.services.gmail_service import build_user_gmail_service
+from app.services.gmail_service import (
+    NEEDS_REAUTH,
+    RATE_LIMITED,
+    build_user_gmail_service,
+    credentials_to_token_data,
+    describe_google_error,
+)
 from app.services.inbox_briefing import build_briefing
-from app.services.inbox_reader import DEFAULT_ANALYZE
+from app.services.inbox_reader import DEFAULT_ANALYZE, MAX_ANALYZE
 
 router = APIRouter()
 ai = SecretaryAI()
@@ -49,7 +56,18 @@ def _load_gmail(user_id):
     token = profile.get("gmail_token")
     if not token:
         return None, profile.get("full_name") or "there", False
-    return build_user_gmail_service(token), profile.get("full_name") or "there", True
+
+    def _save(creds, user_id=user_id, previous=token):
+        # A Google access token lives about an hour, so a stored one is stale
+        # far more often than not. Writing the refreshed token back turns the
+        # refresh into an hourly event instead of something every request pays
+        # for, and the row keeps the refresh token and scopes it already had.
+        supabase.from_("profiles").update(
+            {"gmail_token": credentials_to_token_data(creds, previous)}
+        ).eq("id", user_id).execute()
+
+    service = build_user_gmail_service(token, on_refresh=_save)
+    return service, profile.get("full_name") or "there", True
 
 
 # Tab -> Gmail search query. These mirror Gmail's own categories (Primary,
@@ -80,13 +98,15 @@ ACTION_LABELS = {
 
 
 class InboxActionRequest(BaseModel):
-    user_id: str
     message_id: str
     action: str
 
 
 @router.get("/summary")
-async def inbox_summary(user_id: str, max_results: int = DEFAULT_ANALYZE):
+async def inbox_summary(
+    user_id: CurrentUser,
+    max_results: int = Query(DEFAULT_ANALYZE, ge=1, le=MAX_ANALYZE),
+):
     """Classify the unread inbox and return a decision-ready briefing.
 
     `max_results` caps how many unread messages are analysed in one pass, and
@@ -104,9 +124,16 @@ async def inbox_summary(user_id: str, max_results: int = DEFAULT_ANALYZE):
     try:
         briefing = build_briefing(service, ai, user_name, max_results)
     except Exception as e:
-        # Most commonly: old token lacks the readonly scope -> user must re-link.
+        # What went wrong decides what the UI may offer. Re-linking repairs a
+        # dead or too-narrow grant, but a throttled mailbox is perfectly
+        # healthy and re-linking it changes nothing, so the two must not share
+        # an answer. Google's own wording can name quotas and internal ids, so
+        # it goes to the log and the caller gets the fixed sentence.
         print(f"inbox_summary read error: {e}")
-        return {"gmail_linked": True, "needs_reauth": True, "error": str(e), "user_name": user_name}
+        kind, message = describe_google_error(e)
+        return {"gmail_linked": True, "needs_reauth": kind == NEEDS_REAUTH,
+                "rate_limited": kind == RATE_LIMITED, "error": message,
+                "user_name": user_name}
 
     counts, scope = briefing["counts"], briefing["scope"]
     return {
@@ -127,7 +154,11 @@ async def inbox_summary(user_id: str, max_results: int = DEFAULT_ANALYZE):
 
 
 @router.get("/messages")
-async def inbox_messages(user_id: str, tab: str = "important", max_results: int = 20):
+async def inbox_messages(
+    user_id: CurrentUser,
+    tab: str = "important",
+    max_results: int = Query(20, ge=1, le=100),
+):
     """List messages for a given inbox tab with their read/star/important flags."""
     service, _user_name, linked = _load_gmail(user_id)
     if not linked:
@@ -172,18 +203,21 @@ async def inbox_messages(user_id: str, tab: str = "important", max_results: int 
 
     except Exception as e:
         print(f"inbox_messages error: {e}")
-        # Old tokens without read scope, or transient API errors.
-        return {"gmail_linked": True, "needs_reauth": True, "error": str(e), "messages": []}
+        # Only a dead or too-narrow grant is worth a re-link prompt; a quota
+        # answers with the same 403 and needs patience instead.
+        kind, message = describe_google_error(e)
+        return {"gmail_linked": True, "needs_reauth": kind == NEEDS_REAUTH,
+                "rate_limited": kind == RATE_LIMITED, "error": message, "messages": []}
 
 
 @router.post("/action")
-async def inbox_action(req: InboxActionRequest):
+async def inbox_action(user_id: CurrentUser, req: InboxActionRequest):
     """Perform a single Gmail action (archive/trash/label/star/read) on a message.
 
     Requires the gmail.modify scope; users linked before it was added get a
     403 so the UI can prompt a re-link.
     """
-    service, _user_name, linked = _load_gmail(req.user_id)
+    service, _user_name, linked = _load_gmail(user_id)
     if not linked or service is None:
         raise HTTPException(status_code=401, detail="Gmail not linked")
 
@@ -205,9 +239,15 @@ async def inbox_action(req: InboxActionRequest):
     except HTTPException:
         raise
     except Exception as e:
-        detail = str(e)
-        low = detail.lower()
-        if "insufficient" in low or "scope" in low or "permission" in low or "403" in low:
-            raise HTTPException(status_code=403, detail="Gmail needs re-link for modify access")
+        # Gmail answers both "this token lacks gmail.modify" and "you are
+        # going too fast" with a 403, so neither the status nor the exception
+        # text tells them apart on its own. The status chosen here is the UI's
+        # whole signal: it reads 403 as "re-link Gmail" and shows the message
+        # as it stands for anything else.
         print(f"inbox_action error: {e}")
-        raise HTTPException(status_code=500, detail=detail)
+        kind, message = describe_google_error(e)
+        if kind == NEEDS_REAUTH:
+            raise HTTPException(status_code=403, detail=message)
+        if kind == RATE_LIMITED:
+            raise HTTPException(status_code=429, detail=message)
+        raise HTTPException(status_code=500, detail=message)
