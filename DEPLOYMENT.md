@@ -19,7 +19,9 @@ You need:
 - The repo pushed to GitHub (already done)
 - A [Render](https://render.com) account — free tier is enough
 - A [Vercel](https://vercel.com) account — free tier is enough
-- Your Supabase project already set up (schema + all three migrations run)
+- Your Supabase project already set up and its SQL run — a brand new project needs
+  `database/setup.sql` and nothing else; an existing one needs `database/schema.sql`
+  followed by migrations `002`, `003`, `004` and `005`, in order
 - These four secrets to hand:
 
 | Secret | Where it lives now |
@@ -32,6 +34,10 @@ You need:
 > **The service-role key bypasses row-level security.** It belongs only in Render's
 > environment variables — never in the frontend, never in the repo.
 
+If the Supabase project has been idle for a while, confirm it is still there before you
+spend time on anything else — free projects pause, and paused ones are eventually deleted.
+See **Recovering a paused or deleted Supabase project** near the end of this document.
+
 ---
 
 ## Step 1 — Deploy the backend to Render
@@ -42,7 +48,7 @@ You need:
 
 | Field | Value |
 |---|---|
-| **Name** | `smart-email-agent-api` (this becomes your URL) |
+| **Name** | `automated-email-ai` (this becomes your URL) |
 | **Region** | whichever is closest to you |
 | **Branch** | `main` |
 | **Root Directory** | `backend` |
@@ -62,7 +68,7 @@ repo root, not the working directory.
 
 ## Step 2 — Backend environment variables
 
-Scroll to **Environment Variables** and add these six:
+Scroll to **Environment Variables** and add:
 
 | Key | Value |
 |---|---|
@@ -72,6 +78,18 @@ Scroll to **Environment Variables** and add these six:
 | `MISTRAL_API_KEY` | your Mistral key |
 | `GOOGLE_CREDENTIALS_JSON` | the **entire contents** of `backend/credentials.json`, as one line |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` for now — fixed in step 6 |
+| `BREVO_API_KEY` | your `xkeysib-…` key — this is what mails the signup and reset codes |
+| `MAIL_FROM` | the sender address you verified with Brevo |
+| `MAIL_GMAIL_PROFILE_ID` | *optional* — the `profiles.id` whose linked Gmail sends system mail when no Brevo or Resend key is present |
+
+`OAUTH_REDIRECT_URI` and `FRONTEND_URL` are required too, but both name URLs that do not
+exist yet, so they are added in step 3.
+
+The mail variables are what make email sign-up work at all: the verification codes are
+issued and sent by this backend rather than by Supabase. Without them the signup screen
+asks for a code that never arrives. `MAIL_FROM_NAME`, `RESEND_API_KEY` and the `SMTP_*`
+alternatives are described in `backend/.env.example` and in the README's step 5; Render
+blocks outbound SMTP, so an HTTP provider is the only one that works here.
 
 For `GOOGLE_CREDENTIALS_JSON`, open `backend/credentials.json`, copy everything including
 the outer braces, and paste it as the value. It must stay valid JSON on a single line:
@@ -86,16 +104,16 @@ backend prefers this variable and falls back to the file locally.
 Now click **Create Web Service**. The first build takes 5–10 minutes — scikit-learn and
 SciPy are large wheels.
 
-When it finishes you get a URL like `https://smart-email-agent-api.onrender.com`.
-**Copy it.**
+When it finishes you get a URL built from the service name — for this deployment,
+`https://automated-email-ai.onrender.com`. **Copy it.**
 
 ### Verify the backend
 
 ```bash
-curl https://smart-email-agent-api.onrender.com/
+curl https://automated-email-ai.onrender.com/
 # {"message":"Email Agent Backend is Running!"}
 
-curl https://smart-email-agent-api.onrender.com/api/v1/ai/classify/health
+curl https://automated-email-ai.onrender.com/api/v1/ai/classify/health
 ```
 
 The second call should report both models as `"available": true`. If it does, the ML models
@@ -108,19 +126,36 @@ were committed and loaded correctly — the single best signal that the deploy i
 The Gmail "Link" flow redirects back to the backend, which is no longer localhost.
 
 1. **https://console.cloud.google.com/apis/credentials?project=smart-email-agent-501013**
-2. Open your OAuth 2.0 Web client
-3. Under **Authorized redirect URIs**, add:
-   ```
-   https://smart-email-agent-api.onrender.com/api/v1/actions/callback
-   ```
-   Keep the existing localhost URI and the Supabase one.
-4. **Save**
+2. Open your OAuth 2.0 Web client — client ID
+   `1037638774796-j9a77ss8ua9episgc8hfsa29g1pek3mf.apps.googleusercontent.com`
+3. Under **Authorized redirect URIs**, make sure **all three** of these are present, then
+   **Save**:
+
+| URI | Who sends the browser here |
+|---|---|
+| `https://automated-email-ai.onrender.com/api/v1/actions/callback` | this backend, at the end of **Link Gmail** |
+| `https://<your-supabase-ref>.supabase.co/auth/v1/callback` | Supabase's own Google provider, behind **Continue with Google** |
+| `http://localhost:8000/api/v1/actions/callback` | **Link Gmail** while working locally |
+
+The first two differ because there are genuinely two OAuth flows sharing one Google
+client. **Link Gmail** is run by this backend, which asks for the Gmail scopes and keeps
+the refresh token itself, so Google must return to the backend. **Continue with Google**
+is run by Supabase, which asks only for sign-in and performs its own code exchange, so
+Google must return to Supabase. Removing either URI breaks exactly one of the two buttons
+and leaves the other working, which is why the symptom is usually misread.
+
+> **Publishing status matters more than it looks.** While the OAuth app is in **Testing**,
+> Google expires every refresh token after **7 days**, and only accounts on the test-user
+> list can grant the Gmail scopes at all. That is almost always what is behind "it worked
+> last week" — the token did not break, it aged out. **In production** removes both limits.
+> The app remains unverified either way, which only affects the warning screen shown when
+> linking Gmail.
 
 Then back in Render → **Environment** → add:
 
 | Key | Value |
 |---|---|
-| `OAUTH_REDIRECT_URI` | `https://smart-email-agent-api.onrender.com/api/v1/actions/callback` |
+| `OAUTH_REDIRECT_URI` | `https://automated-email-ai.onrender.com/api/v1/actions/callback` |
 | `FRONTEND_URL` | `https://automated-email-ai.vercel.app` |
 
 Render redeploys automatically. `OAUTH_REDIRECT_URI` must match the Google entry
@@ -153,14 +188,16 @@ code. Unset, it falls back to the first entry in `ALLOWED_ORIGINS`, then to loca
 **Root Directory must be `frontend`**, or Vercel will look for `package.json` at the repo
 root and fail.
 
-3. Expand **Environment Variables** and add:
+3. Expand **Environment Variables** and add all three:
 
 | Key | Value |
 |---|---|
-| `VITE_API_URL` | `https://smart-email-agent-api.onrender.com` |
+| `VITE_API_URL` | `https://automated-email-ai.onrender.com` |
+| `VITE_SUPABASE_URL` | `https://<your-project-ref>.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | your project's **publishable (anon)** key |
 
-Optionally also set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; without them the app
-uses the values compiled into `supabaseClient.ts`.
+All three are required. The Supabase pair has no fallback compiled into the source any
+more, so a build missing them produces a frontend that cannot sign anyone in.
 
 > `VITE_*` variables are **inlined into the JavaScript bundle** at build time and are
 > readable by anyone. Only the Supabase publishable (anon) key belongs here — never the
@@ -243,16 +280,58 @@ Measured steady state with both classifiers loaded: **~226 MB**, against the fre
 512 MB limit. Models load lazily on first use, so idle sits lower. There is room, but adding
 another large dependency could push it over.
 
-### Supabase pauses free projects
+### Supabase pauses free projects, and then deletes them
 
-After a week of inactivity the project pauses and every API call fails with a DNS error.
-The dashboard shows a **Restore project** button. The backend already returns a clear
-message for this case rather than a generic 500.
+After about a week of inactivity the project pauses and every API call fails. A paused
+project can be restored from the dashboard; one left paused for about 90 days is removed
+outright and cannot be. The next section covers telling the two apart and recovering from
+either.
 
 ### Rebuilds are not automatic for environment variables
 
 Changing a `VITE_*` variable in Vercel requires a **redeploy** — the value is baked into the
 bundle at build time. Render restarts on its own when you change a variable.
+
+---
+
+## Recovering a paused or deleted Supabase project
+
+Both states look the same from the app — everything fails at once — but only one of them
+can be undone from the dashboard, so establish which you are in before changing anything:
+
+```bash
+nslookup <your-project-ref>.supabase.co
+```
+
+| What you get back | State | What to do |
+|---|---|---|
+| An address, and API calls return an HTTP error | **Paused** | Supabase dashboard → **Restore project**, wait a minute, carry on |
+| `NXDOMAIN` / "can't find" — the name no longer resolves | **Deleted** | The project is gone for good. Create a new one and follow the list below |
+
+A new project gets a **new ref, a new anon key and a new service_role key**. None of them
+carry over, and the old values are written down in more places than is obvious, so work
+through all of these — in this order, because each step depends on the one before:
+
+1. **Supabase → SQL Editor** — run `database/setup.sql`. It is `schema.sql` plus every
+   migration consolidated into one paste, which is exactly what a fresh project needs.
+2. **Render → Environment** — set `SUPABASE_URL` to the new project URL and `SUPABASE_KEY`
+   to the new **service_role** key. Render redeploys by itself.
+3. **Vercel → Settings → Environment Variables** — set `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_ANON_KEY` to the new project URL and **anon** key.
+4. **Vercel → Deployments → Redeploy.** Do not skip this. `VITE_*` values are inlined into
+   the bundle at build time, so until the frontend is rebuilt it keeps calling the deleted
+   project no matter how correct the dashboard looks.
+5. **Google Cloud Console → Credentials → your OAuth client** — add
+   `https://<new-ref>.supabase.co/auth/v1/callback` to the authorized redirect URIs. The
+   old ref's entry can be deleted.
+6. **Supabase → Authentication → Sign In / Providers → Google** — enable it and paste the
+   same client ID and secret as before; provider settings do not survive the project.
+7. **Supabase → Authentication → URL Configuration** — set the Site URL and the redirect
+   URLs again, exactly as **Step 5** of the walkthrough describes.
+
+Accounts do not survive this either: `auth.users` lived in the deleted project. Everyone
+signs up again and re-links Gmail. Nothing on the Render or Google side needs recreating
+beyond the two entries named above.
 
 ---
 
@@ -274,8 +353,13 @@ for the secrets, which are marked `sync: false` so they are never stored in the 
 | Vercel build fails: no `package.json` | Root Directory is not set to `frontend` |
 | `redirect_uri_mismatch` on Link Gmail | `OAUTH_REDIRECT_URI` and the Google Console entry differ |
 | "Link Gmail" opens a page-not-found tab | The Render callback URL is not in Google's **Authorized redirect URIs** (step 3) |
-| Settings says "missing permissions" right after linking | Pre-fix builds stored an empty scope list; re-link once and it clears |
+| Settings says "missing permissions" right after linking | The stored grant records no scopes — link once more and the consent writes them |
+| The app shows "This deployment isn't configured yet" | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` were missing from the build. Set them in Vercel and **redeploy** |
+| "That Gmail link was not started in this browser" | The consent was finished somewhere other than the tab that began it — start Link Gmail again and stay in the same tab. A link someone else sends you will always say this |
+| "This link request is no longer valid" | The attempt expired (15 minutes) or was already used. Press Link Gmail again |
 | Google sign-in returns to localhost | Supabase **Site URL** still points at localhost |
 | `Unsupported provider: provider is not enabled` | Google provider off in Supabase — see the main README |
 | Confirmation email has a link, not a code | The signup template needs `{{ .Token }}` — see the main README |
-| Everything 500s after a quiet week | Supabase project paused; restore it from the dashboard |
+| Everything 500s after a quiet week | Supabase project paused — or deleted, if its ref no longer resolves. See **Recovering a paused or deleted Supabase project** |
+| Gmail worked last week, now asks to re-link | The Google app is in **Testing**, where refresh tokens expire after 7 days (step 3) |
+| Sign-in works but Link Gmail fails, or the reverse | Only one of the two redirect URIs is registered on the Google client (step 3) |

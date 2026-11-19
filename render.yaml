@@ -5,7 +5,7 @@
 # prompts for them instead of expecting them in the repo.
 services:
   - type: web
-    name: smart-email-agent-api
+    name: automated-email-ai   # becomes https://automated-email-ai.onrender.com
     runtime: python
     plan: free
     rootDir: backend           # the repo root is still cloned, so ../ml is available
@@ -34,4 +34,10 @@ services:
       - key: BREVO_API_KEY           # https://app.brevo.com/settings/keys/api
         sync: false
       - key: MAIL_FROM               # a sender address verified with Brevo
+        sync: false
+      # Optional, and only consulted when no Brevo/Resend key is present. It is
+      # what enables sending through a linked user's Gmail at all: without it
+      # that transport is unavailable, because the deployment must not help
+      # itself to whichever mailbox happens to be linked.
+      - key: MAIL_GMAIL_PROFILE_ID   # a profiles.id whose Gmail token has the send scope
         sync: false

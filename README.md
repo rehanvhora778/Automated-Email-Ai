@@ -150,15 +150,27 @@ sequenceDiagram
 
 Base URL: `http://localhost:8000` · all routes are prefixed with `/api/v1`.
 
+Every route below needs `Authorization: Bearer <Supabase access token>`, and
+takes the account it acts on from that token. The exceptions are `/actions/callback`
+(a redirect arriving from Google, which carries no headers — its `state` is an
+unguessable single-use value instead), the `/otp/*` routes (they run before an
+account exists) and `/ai/classify/health` (stored model metrics, no user data).
+
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/auth/google/link` | Store the Google tokens from a sign-in as the profile's Gmail token |
 | `GET`  | `/auth/me` | Signed-in user's profile + whether Gmail is linked |
 | `POST` | `/chat/` | Conversational AI email assistant with per-thread memory |
-| `GET`  | `/actions/login-google` | Return the Google OAuth consent URL |
-| `GET`  | `/actions/callback` | OAuth callback — stores the Gmail token on the profile |
+| `GET`  | `/actions/login-google` | Start a Gmail link: returns the Google consent URL and a one-time `state` |
+| `GET`  | `/actions/callback` | Google's return leg — exchanges the code and parks the token against that `state` |
+| `POST` | `/actions/complete-link` | Attach a parked token, once the browser that started the link proves it |
+| `POST` | `/actions/unlink-google` | Disconnect the mailbox and revoke the grant at Google |
 | `GET`  | `/actions/history` | The user's last 10 chat queries |
 | `POST` | `/actions/send-email` | Send an email via Gmail (optional file attachment) |
+| `POST` | `/otp/request` | Email a signup or password-reset code |
+| `POST` | `/otp/verify-signup` | Check a signup code and create the account |
+| `POST` | `/otp/verify-recovery` | Check a reset code and set the new password |
+| `GET`  | `/otp/health` | Whether a mail transport is configured, and which |
 | `POST` | `/reply/generate` | Smart Reply — multiple styles from a pasted email |
 | `GET`  | `/inbox/summary` | Per-email classified inbox briefing, grouped bulk mail, delivery failures + ranked actions (read-only) |
 | `GET`  | `/inbox/messages` | List messages for a tab (Gmail categories/views) |
@@ -228,9 +240,13 @@ Automated-Email-Ai/
 │   ├── models/                      # Fitted pipelines + metrics + plots
 │   └── README.md                    # Results, limitations, reproduction
 ├── database/
+│   ├── setup.sql                    # Schema + every migration, for a fresh project
 │   ├── schema.sql                   # Tables, RLS policies, signup trigger
 │   └── migrations/
-│       └── 002_conversations.sql    # Conversation-thread support
+│       ├── 002_conversations.sql    # Conversation-thread support
+│       ├── 003_google_auth.sql      # Avatar + Google metadata in the signup trigger
+│       ├── 004_email_otp.sql        # Hashed six-digit signup / reset codes
+│       └── 005_oauth_link_states.sql # Single-use Gmail-link states
 └── README.md
 ```
 
@@ -246,10 +262,19 @@ Automated-Email-Ai/
 - A **Google Cloud** OAuth 2.0 Web client (Gmail API enabled)
 
 ### 1. Database
-In the Supabase **SQL Editor**, run:
+
+**On a brand new Supabase project**, open the **SQL Editor** and run `database/setup.sql`.
+It is the schema plus every migration consolidated into one paste, which is all a project
+with no data in it needs.
+
+**On a project that already has rows in it**, run the numbered files in order instead — the
+migrations carry backfill steps that `setup.sql` deliberately omits:
+
 1. `database/schema.sql` — creates the `profiles` and `chat_messages` tables, RLS policies, and the signup trigger.
 2. `database/migrations/002_conversations.sql` — adds the `conversations` table and links messages to threads.
 3. `database/migrations/003_google_auth.sql` — adds `avatar_url` and teaches the signup trigger to read Google's OAuth metadata.
+4. `database/migrations/004_email_otp.sql` — adds `email_otps`, where the six-digit signup and reset codes are held as salted hashes.
+5. `database/migrations/005_oauth_link_states.sql` — adds `oauth_states`, so the Gmail-link round trip carries an unguessable single-use value, and takes the `gmail_token` column out of the browser's reach.
 
 ### 2. Backend
 
@@ -285,10 +310,24 @@ python -m uvicorn app.main:app --reload --port 8000
 ```bash
 cd frontend
 npm install
-npm run dev        # → http://localhost:5173
 ```
 
-The frontend's Supabase project (URL + anon key) is configured in `frontend/src/supabaseClient.ts`, and the backend base URL is the `API_URL` constant (`http://localhost:8000`).
+Create `frontend/.env.local`:
+
+```env
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-publishable-anon-key>
+# Backend base URL. Omit to use http://localhost:8000
+# VITE_API_URL=https://automated-email-ai.onrender.com
+```
+
+Both Supabase values are required — `supabaseClient.ts` has no defaults to fall back on, so
+without them nothing can sign in. Everything `VITE_`-prefixed is inlined into the bundle at
+build time, which is why a deployed frontend has to be rebuilt after any of them change.
+
+```bash
+npm run dev        # → http://localhost:5173
+```
 
 ### 4. Google sign-in setup
 
@@ -304,18 +343,27 @@ Only the Google route needs configuring. Three things:
 
 **a. Google Cloud Console** → *APIs & Services → Credentials → your OAuth 2.0 Web client*
 
-Add **both** redirect URIs:
+Add **all three** redirect URIs:
 
 | URI | Used by |
 |---|---|
-| `https://<your-project-ref>.supabase.co/auth/v1/callback` | Supabase sign-in |
-| `http://localhost:8000/api/v1/actions/callback` | the manual "Link Gmail" fallback |
+| `https://<your-project-ref>.supabase.co/auth/v1/callback` | Supabase's Google provider, behind **Continue with Google** |
+| `https://automated-email-ai.onrender.com/api/v1/actions/callback` | the deployed backend's **Link Gmail** flow |
+| `http://localhost:8000/api/v1/actions/callback` | the same flow, running locally |
+
+The first two serve separate OAuth flows that happen to share one Google client, and both
+have to be registered. **Continue with Google** is driven by Supabase, which exchanges the
+code itself and therefore has to be returned to; **Link Gmail** is driven by this backend,
+which requests the Gmail scopes and keeps the refresh token. Register only one and exactly
+one of the two buttons breaks, which makes the failure easy to misread.
 
 Enable the **Gmail API**, and on the OAuth consent screen add the scopes
 `gmail.send`, `gmail.readonly`, `gmail.modify`.
 
 Set the publishing status to **In production** so any Google account can sign in — in *Testing*
-only listed test users get through, and everyone else is rejected with `access_denied`. Publishing
+only listed test users get through, everyone else is rejected with `access_denied`, and the
+refresh tokens Google issues expire after **7 days**, which is the usual explanation for a
+Gmail link that worked last week and now asks to be re-authorised. Publishing
 requires the consent screen's app name, support email, developer contact, home page and a privacy
 policy and terms URL; the latter two are served from `frontend/public/`. The app stays unverified,
 which only affects the Gmail linking step (see [Try it live](#-try-it-live)).
@@ -331,15 +379,16 @@ Set **Site URL** to `http://localhost:5173` and add it under **Redirect URLs**.
 ### 5. Email OTP setup (for email/password sign-up)
 
 Email sign-up and password reset are verified with a 6-digit code that **this backend**
-issues, mails and checks. Two things make it work: a table to keep the codes in, and an
-SMTP sender.
+issues, mails and checks. Two things make it work: a table to keep the codes in, and a way
+to send mail.
 
 **a. Run the migration**
 
 Supabase Dashboard → *SQL Editor* → paste **`database/migrations/004_email_otp.sql`** →
 **Run**. It creates `public.email_otps`, where codes are held as salted hashes with a
 ten-minute expiry and a five-attempt limit. Without it, every code request fails with a
-missing-table error.
+missing-table error. `database/setup.sql` already contains it, so a project set up that way
+can skip this.
 
 **b. Email delivery for verification codes**
 
@@ -370,9 +419,15 @@ sender is verified):
 `onboarding@resend.dev` sender can only mail your own account address; reaching anyone else
 needs a verified domain.
 
+*With neither key set*, the backend sends through a Gmail account that is already linked —
+HTTPS again, so nothing blocks it, and no extra account anywhere. Point
+`MAIL_GMAIL_PROFILE_ID` at the `profiles.id` it should send as; left unset it takes the
+oldest profile holding a send-scoped token, which means the sending address changes as
+people sign up.
+
 *Local development* can still use SMTP — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
 `SMTP_PASSWORD`, `SMTP_FROM` — since nothing blocks it there. With several credentials
-present the order is Resend, Brevo, then SMTP; `EMAIL_PROVIDER` forces one.
+present the order is Resend, Brevo, Gmail API, then SMTP; `EMAIL_PROVIDER` forces one.
 
 Check it with **`GET /api/v1/otp/health?check=true`**, which reports the chosen provider and
 authenticates against it without sending:
@@ -432,8 +487,8 @@ instead, but the real fix is two steps, **both** required:
 https://<your-project-ref>.supabase.co/auth/v1/callback
 ```
 
-Keep `http://localhost:8000/api/v1/actions/callback` as well — the manual "Link Gmail"
-flow still uses it.
+Keep the two "Link Gmail" URIs as well — `https://automated-email-ai.onrender.com/api/v1/actions/callback`
+for the deployed backend and `http://localhost:8000/api/v1/actions/callback` for local work.
 
 **2. Supabase Dashboard** → *Authentication → Providers → Google* → enable it, then paste
 the `client_id` and `client_secret` from `backend/credentials.json`.
@@ -461,15 +516,15 @@ provider said, which separates the three usual causes:
 
 ### Every code request fails
 
-`database/migrations/004_email_otp.sql` has not been run — the backend has nowhere to store
-the codes.
+Neither `database/setup.sql` nor `database/migrations/004_email_otp.sql` has been run — the
+backend has nowhere to store the codes.
 
 ### The password reset email has a link instead of a code
 
 That is the stock template, and the app handles it: clicking the link returns you to the
 app already signed in for recovery, and the reset screen opens straight at "Set a new
 password". Prefer a six-digit code instead? Add `{{ .Token }}` to the *Reset password*
-template — see step 5c above.
+template.
 
 Note the link obeys Supabase's **URL Configuration → Redirect URLs**: the app asks to come
 back to the origin it was opened from, so the deployed URL has to be on that allow-list or
@@ -488,8 +543,10 @@ between local and production:
 | Variable | Side | Purpose |
 |---|---|---|
 | `VITE_API_URL` | frontend | Backend base URL (falls back to `http://localhost:8000`) |
+| `VITE_SUPABASE_URL` · `VITE_SUPABASE_ANON_KEY` | frontend | Supabase project and publishable key — both required, both inlined at build time |
 | `ALLOWED_ORIGINS` | backend | Comma-separated CORS allowlist (falls back to the Vite dev servers) |
 | `OAUTH_REDIRECT_URI` | backend | Gmail OAuth callback, must match the Google client exactly |
+| `FRONTEND_URL` | backend | Where the OAuth callback returns the browser once Google is done |
 | `GOOGLE_CREDENTIALS_JSON` | backend | Contents of `credentials.json`, since that file is gitignored |
 
 `render.yaml` describes the backend service as a Render blueprint.
@@ -505,6 +562,17 @@ between local and production:
 | `MISTRAL_API_KEY` | `backend/.env` | Mistral AI API key for all generative features |
 | `GOOGLE_CREDENTIALS_JSON` | `backend/.env` *(optional)* | Google OAuth client JSON for production (alternative to `credentials.json`) |
 | `credentials.json` | `backend/` | Google OAuth Web client for local development |
+| `OAUTH_REDIRECT_URI` | `backend/.env` | Gmail OAuth callback; must match the Google client character for character |
+| `FRONTEND_URL` | `backend/.env` | Where the OAuth callback hands the browser back to the app |
+| `ALLOWED_ORIGINS` | `backend/.env` | Comma-separated CORS allowlist, no trailing slashes |
+| `BREVO_API_KEY` · `MAIL_FROM` | `backend/.env` | Transport for the signup and password-reset codes (step 5b) |
+| `MAIL_GMAIL_PROFILE_ID` | `backend/.env` *(optional)* | Which linked Gmail sends system mail when no Brevo or Resend key is set |
+| `VITE_SUPABASE_URL` | `frontend/.env.local` | Supabase project URL — required |
+| `VITE_SUPABASE_ANON_KEY` | `frontend/.env.local` | Supabase publishable (anon) key — required |
+| `VITE_API_URL` | `frontend/.env.local` *(optional)* | Backend base URL; defaults to `http://localhost:8000` |
+
+`backend/.env.example` and `frontend/.env.example` are the complete list, including the
+Resend and SMTP alternatives and the optional model-path overrides.
 
 ---
 
@@ -512,11 +580,16 @@ between local and production:
 
 | Table | Key columns | Purpose |
 |---|---|---|
-| `profiles` | `id`, `full_name`, `signature`, `gmail_token`, `created_at` | One row per user; stores the Gmail OAuth token. Auto-created on signup via a trigger. |
+| `profiles` | `id`, `full_name`, `avatar_url`, `signature`, `gmail_token`, `created_at` | One row per user; stores the Gmail OAuth token. Auto-created on signup via a trigger. |
 | `conversations` | `id`, `user_id`, `title`, `updated_at` | Chat threads shown in the workspace sidebar. |
 | `chat_messages` | `id`, `user_id`, `role`, `content`, `conversation_id` | Per-thread chat history (assistant memory). |
+| `email_otps` | `email`, `purpose`, `code_hash`, `expires_at`, `attempts` | Signup and reset codes, stored as salted hashes with a ten-minute expiry. |
+| `oauth_states` | `state`, `user_id`, `token_data`, `expires_at` | One row per Gmail-link attempt; parks Google's tokens until the browser that started the flow claims them. |
 
-All tables are protected by **Row-Level Security** so users can only read and write their own rows.
+All tables are protected by **Row-Level Security** so users can only read and write their own
+rows. `email_otps` and `oauth_states` go further and are unreadable from the browser
+entirely — they hold credentials in flight, and only the backend's service-role key needs
+them. `profiles.gmail_token` is withheld the same way, at the column level.
 
 ---
 
