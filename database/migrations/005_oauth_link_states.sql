@@ -27,6 +27,21 @@
 -- Idempotent / safe to re-run.
 -- =====================================================================
 
+-- ---------- 0. CATCH UP ANY MISSING COLUMN ----------
+--
+-- The grant below names every column the browser may read, which means
+-- every one of them has to exist by the time it runs. `avatar_url` arrives
+-- in migration 003, and a project that went straight from the original
+-- schema to here has never seen it — Postgres then rejects the whole file
+-- with `column "avatar_url" of relation "profiles" does not exist`, and
+-- rolls back, so the table this migration is actually for is never created.
+-- Adding it here costs nothing on a database that already has it and makes
+-- this file safe to run against any state of the schema.
+
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists signature  text;
+
+
 -- ---------- 1. PENDING OAUTH LINK ATTEMPTS ----------
 
 create table if not exists public.oauth_states (
