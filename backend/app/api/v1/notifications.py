@@ -28,7 +28,7 @@ class ReadAllRequest(BaseModel):
 
 
 @router.get("/list")
-async def notifications_list(
+def notifications_list(
     user_id: CurrentUser,
     # One metadata fetch per id goes into the batch below, so the ceiling keeps
     # a single request from asking Gmail for an unbounded page.
@@ -96,7 +96,7 @@ async def notifications_list(
 
 
 @router.post("/read_all")
-async def notifications_read_all(user_id: CurrentUser, req: ReadAllRequest):
+def notifications_read_all(user_id: CurrentUser, req: ReadAllRequest):
     """Remove the UNREAD label from the given messages in one call."""
     service, _user_name, linked = _load_gmail(user_id)
     if not linked or service is None:

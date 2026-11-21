@@ -88,7 +88,7 @@ export function AIToolModal({
     abortRef.current = controller;
 
     // Fire the local classifier alongside the LLM stream rather than before it.
-    // It resolves in ~1ms against Mistral's several hundred, so the verdict is
+    // It resolves in ~1ms against the LLM's several hundred, so the verdict is
     // on screen long before the first token — and a failure here is silent,
     // leaving the LLM explanation as the sole output.
     const mlKind = ML_KIND[action];

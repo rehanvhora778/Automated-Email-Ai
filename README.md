@@ -2,7 +2,7 @@
 
 # 📬 Smart Email Agent
 
-### An AI email copilot that reads your inbox, drafts replies, and sends mail on your behalf — powered by Mistral AI and the Gmail API.
+### An AI email copilot that reads your inbox, drafts replies, and sends mail on your behalf — powered by a provider-agnostic LLM layer (Groq by default) and the Gmail API.
 
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -11,7 +11,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-[![Mistral AI](https://img.shields.io/badge/Mistral_AI-FF7000?logo=mistralai&logoColor=white)](https://mistral.ai/)
+[![Groq](https://img.shields.io/badge/LLM-Groq_%C2%B7_gpt--oss-F55036)](https://console.groq.com/docs/models)
 
 </div>
 
@@ -19,7 +19,7 @@
 
 ## 📖 Overview
 
-**Smart Email Agent** is a full-stack AI email assistant. It connects to your Gmail through OAuth, uses **Mistral AI** to understand and write emails, and streams generated text token by token as it arrives — all behind a polished, glassmorphic React dashboard.
+**Smart Email Agent** is a full-stack AI email assistant. It connects to your Gmail through OAuth, uses an **LLM provider chain** (Groq's free `gpt-oss` models by default, with automatic fallback) to understand and write emails, and streams generated text token by token as it arrives — all behind a polished, glassmorphic React dashboard.
 
 Every data surface is **real**: inbox summaries, analytics, contacts and notifications are computed live from the Gmail API, and drafts are personalised with your profile. The app deliberately **never auto-sends** — every AI draft is handed to a compose modal for a human "Review & Send".
 
@@ -96,14 +96,14 @@ flowchart LR
     FE -->|"Supabase JS<br/>Auth + RLS reads"| SB[("Supabase<br/>Postgres + Auth")]
     FE -->|"REST + streaming (Axios / fetch)"| API["FastAPI Backend"]
     API -->|"service_role"| SB
-    API -->|"prompts"| MI["🧠 Mistral AI"]
+    API -->|"prompts"| MI["🧠 LLM provider chain<br/>(Groq · OpenAI · opt-in Gemini/Mistral)"]
     API -->|"OAuth 2.0 + REST"| GM["📧 Gmail API"]
 ```
 
 **How it fits together**
 - The **React SPA** owns auth, the chat workspace and the compose modal (`App.tsx`), and routes all "workspace" views through `CopilotView.tsx`.
 - It talks to **Supabase directly** for authentication and for reading the user's own rows (protected by row-level security), and to the **FastAPI backend** for everything that needs Gmail or the LLM.
-- The **FastAPI backend** is organised as one router per domain. It builds a per-user Gmail client from the stored OAuth token, calls **Mistral AI** for all generative features, and uses the Supabase **service-role** key for privileged reads/writes.
+- The **FastAPI backend** is organised as one router per domain. It builds a per-user Gmail client from the stored OAuth token, calls the **LLM provider chain** (`services/llm.py`) for all generative features, falling back across models and providers when one is rate-limited, and uses the Supabase **service-role** key for privileged reads/writes.
 
 ### Example workflow — link Gmail & send an AI draft
 
@@ -123,7 +123,7 @@ sequenceDiagram
     API->>DB: Save OAuth token on profile
     U->>FE: Ask AI to draft an email
     FE->>API: POST /chat
-    API->>API: Mistral drafts (status: ready)
+    API->>API: LLM drafts (status: ready)
     API-->>FE: Draft + subject
     U->>FE: Review & click "Send via Gmail"
     FE->>API: POST /actions/send-email
@@ -139,7 +139,7 @@ sequenceDiagram
 |---|---|
 | **Frontend** | React 18, Vite 5, TypeScript, Tailwind CSS 3, Framer Motion, TanStack React Query 5, Recharts 3, Axios, React Markdown + remark-gfm, sonner (toasts), lucide-react |
 | **Backend** | FastAPI, Uvicorn, Python 3.10, Pydantic, python-multipart |
-| **AI** | Mistral AI (`mistral-medium-latest`) via the official `mistralai` SDK |
+| **AI** | Provider-agnostic OpenAI-compatible client over `requests` (`services/llm.py`): Groq `openai/gpt-oss-120b` → `gpt-oss-20b` by default, OpenAI when keyed, Gemini/Mistral opt-in; rate-limited models are benched and skipped |
 | **Email** | Gmail API + Google OAuth 2.0 (`google-api-python-client`, `google-auth`) |
 | **Machine Learning** | scikit-learn (TF-IDF, LinearSVC, FeatureUnion, calibration), pandas, NumPy, joblib, Matplotlib, Jupyter |
 | **Data & Auth** | Supabase (PostgreSQL + Auth) with Row-Level Security |
@@ -206,7 +206,8 @@ Automated-Email-Ai/
 │   │   │   ├── contacts.py         # Contacts from Gmail
 │   │   │   └── notifications.py     # Unread-mail notifications
 │   │   ├── services/
-│   │   │   ├── ai_service.py        # Mistral prompt logic (all AI features)
+│   │   │   ├── ai_service.py        # Prompt logic (all AI features)
+│   │   │   ├── llm.py               # LLM provider chain: fallback, rate-limit bench, streaming
 │   │   │   ├── ml_service.py        # Trained spam classifier (local inference)
 │   │   │   ├── inbox_reader.py      # Read-only Gmail evidence + bounce parsing
 │   │   │   ├── inbox_briefing.py    # Briefing pipeline + grounding checks
@@ -258,7 +259,7 @@ Automated-Email-Ai/
 - **Node.js** 18+
 - **Python** 3.10+
 - A **Supabase** project (PostgreSQL + Auth)
-- A **Mistral AI** API key
+- A **Groq** API key (free, no card: [console.groq.com/keys](https://console.groq.com/keys))
 - A **Google Cloud** OAuth 2.0 Web client (Gmail API enabled)
 
 ### 1. Database
@@ -294,7 +295,7 @@ Create `backend/.env`:
 ```env
 SUPABASE_URL=https://<your-project>.supabase.co
 SUPABASE_KEY=<your-service-role-key>
-MISTRAL_API_KEY=<your-mistral-api-key>
+GROQ_API_KEY=<your-groq-api-key>
 # Optional (production alternative to credentials.json):
 # GOOGLE_CREDENTIALS_JSON={"web":{ ... }}
 ```
@@ -559,7 +560,11 @@ between local and production:
 |---|---|---|
 | `SUPABASE_URL` | `backend/.env` | Supabase project URL |
 | `SUPABASE_KEY` | `backend/.env` | **Service-role** key (privileged server-side access) |
-| `MISTRAL_API_KEY` | `backend/.env` | Mistral AI API key for all generative features |
+| `GROQ_API_KEY` | `backend/.env` | Groq API key; enough on its own for every AI feature |
+| `OPENAI_API_KEY` | `backend/.env` *(optional)* | Joins the provider chain automatically when set |
+| `GEMINI_API_KEY` / `MISTRAL_API_KEY` | `backend/.env` *(optional, opt-in)* | Used only when also listed in `AI_PROVIDERS`: their free tiers may train on what they receive |
+| `AI_PROVIDERS` | `backend/.env` *(optional)* | Provider order, default `groq,openai` (e.g. `groq,mistral`) |
+| `<PROVIDER>_MODEL` | `backend/.env` *(optional)* | Comma-separated model list per provider, tried in order |
 | `GOOGLE_CREDENTIALS_JSON` | `backend/.env` *(optional)* | Google OAuth client JSON for production (alternative to `credentials.json`) |
 | `credentials.json` | `backend/` | Google OAuth Web client for local development |
 | `OAUTH_REDIRECT_URI` | `backend/.env` | Gmail OAuth callback; must match the Google client character for character |
@@ -610,6 +615,6 @@ No license file is currently included in this repository. Add one (e.g. MIT) if 
 
 <div align="center">
 
-**Built with React, FastAPI, Supabase, the Gmail API, and Mistral AI.**
+**Built with React, FastAPI, Supabase, the Gmail API, and a provider-agnostic LLM layer.**
 
 </div>

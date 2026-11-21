@@ -368,7 +368,8 @@ class EndpointAuthContractTest(unittest.TestCase):
     #: The callback is a browser redirect arriving from Google and cannot carry
     #: a bearer header, which is exactly why its `state` is an unguessable,
     #: single-use value bound server-side to a user. Health and OTP routes run
-    #: before anyone has a session.
+    #: before anyone has a session. /ai/status is a health route too: provider
+    #: names and how each last fared, never a key or anything about a user.
     PUBLIC = {
         "/",
         "/api/v1/actions/callback",
@@ -377,6 +378,7 @@ class EndpointAuthContractTest(unittest.TestCase):
         "/api/v1/otp/verify-recovery",
         "/api/v1/otp/health",
         "/api/v1/ai/classify/health",
+        "/api/v1/ai/status",
     }
 
     def setUp(self):

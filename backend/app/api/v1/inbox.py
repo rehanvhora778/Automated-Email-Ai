@@ -103,7 +103,7 @@ class InboxActionRequest(BaseModel):
 
 
 @router.get("/summary")
-async def inbox_summary(
+def inbox_summary(
     user_id: CurrentUser,
     max_results: int = Query(DEFAULT_ANALYZE, ge=1, le=MAX_ANALYZE),
 ):
@@ -154,7 +154,7 @@ async def inbox_summary(
 
 
 @router.get("/messages")
-async def inbox_messages(
+def inbox_messages(
     user_id: CurrentUser,
     tab: str = "important",
     max_results: int = Query(20, ge=1, le=100),
@@ -211,7 +211,7 @@ async def inbox_messages(
 
 
 @router.post("/action")
-async def inbox_action(user_id: CurrentUser, req: InboxActionRequest):
+def inbox_action(user_id: CurrentUser, req: InboxActionRequest):
     """Perform a single Gmail action (archive/trash/label/star/read) on a message.
 
     Requires the gmail.modify scope; users linked before it was added get a

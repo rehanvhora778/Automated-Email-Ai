@@ -17,6 +17,7 @@ replies or sends — those live behind their own explicit endpoints.
 import re
 
 from app.services import inbox_reader
+from app.services.llm import LLMError
 
 # Detailed cards, in the order they should be worked through.
 CATEGORY_ORDER = {"Requires Action": 0, "Requires Reply": 1, "Important": 2, "Needs Review": 3}
@@ -50,6 +51,11 @@ _WS = re.compile(r"\s+")
 # ---------------------------------------------------------------------------
 # Coercion helpers — the model's output is untrusted structure
 # ---------------------------------------------------------------------------
+
+def _as_list(value):
+    """A list from a field the model was asked to make a list, else empty."""
+    return value if isinstance(value, list) else []
+
 
 def _text(value, limit=400):
     if not isinstance(value, str):
@@ -100,7 +106,7 @@ def _quote_supported(quote, record):
     A deadline the model could not quote from the email is exactly the kind of
     detail that gets confidently invented, so it is dropped rather than shown.
     """
-    needle = _WS.sub(" ", (quote or "").strip().lower())
+    needle = _WS.sub(" ", (quote if isinstance(quote, str) else "").strip().lower())
     if len(needle) < 4:
         return False
     haystack = _WS.sub(" ", " ".join([
@@ -265,7 +271,7 @@ def _clean_actions(raw, by_ref, failures):
             continue
         seen.add(text.lower())
         kind = str(item.get("type") or "").strip().lower()
-        refs = [r for r in (_ref(x) for x in item.get("refs") or []) if r in by_ref]
+        refs = [r for r in (_ref(x) for x in _as_list(item.get("refs"))) if r in by_ref]
         actions.append({
             "action": text,
             "reason": reason,
@@ -330,7 +336,7 @@ def _assemble(records, failures, analysis, degraded=False):
         if not isinstance(item, dict):
             continue
         members = []
-        for raw_ref in item.get("refs") or []:
+        for raw_ref in _as_list(item.get("refs")):
             ref = _ref(raw_ref)
             if ref in by_ref and ref not in placed:
                 placed.add(ref)
@@ -465,21 +471,45 @@ def analyze_records(ai, records, unread_count, user_name="there"):
     to_analyze = inbox_reader.assign_refs([r for r in records if not r.get("bounce")])
 
     degraded = False
+    ai_error = None
     analysis = {}
     if to_analyze or failures:
         try:
             analysis = ai.analyze_inbox(to_analyze, failures, user_name)
             if not isinstance(analysis, dict):
                 raise ValueError(f"expected a JSON object, got {type(analysis).__name__}")
+        except LLMError as e:
+            print(f"build_briefing: AI unavailable ({e.kind}: {e.detail}) — falling back to Gmail signals")
+            analysis, degraded, ai_error = {}, True, e
         except Exception as e:
-            print(f"build_briefing: analysis unavailable ({e}) — falling back to Gmail signals")
+            print(f"build_briefing: analysis unusable ({e}) — falling back to Gmail signals")
             analysis, degraded = {}, True
 
-    briefing = _assemble(to_analyze, failures, analysis, degraded=degraded)
+    try:
+        briefing = _assemble(to_analyze, failures, analysis, degraded=degraded)
+    except Exception as e:
+        # Valid JSON in a shape nobody expected must not take the briefing
+        # down: inbox.py would report it as a Gmail error and show nothing.
+        # The Gmail facts alone still make a useful, honest briefing.
+        print(f"build_briefing: could not use the analysis ({e}) — falling back to Gmail signals")
+        degraded = True
+        briefing = _assemble(to_analyze, failures, {}, degraded=True)
+
     if degraded:
         briefing["overview"] = _degraded_overview(len(records), failures)
     elif not briefing["overview"]:
         briefing["overview"] = _plain_overview(briefing)
+
+    # Why the AI half is missing, when it is: lets the UI tell "the free quota
+    # is used up, try in a minute" apart from a setup problem.
+    if degraded:
+        briefing["ai_error"] = {
+            "kind": ai_error.kind if ai_error else "bad_output",
+            "message": (ai_error.user_message if ai_error else
+                        "The AI's answer could not be used, so this briefing is built from Gmail signals only."),
+        }
+    else:
+        briefing["ai_error"] = None
 
     analyzed_unread = sum(1 for r in records if r["unread"])
     briefing["scope"] = {

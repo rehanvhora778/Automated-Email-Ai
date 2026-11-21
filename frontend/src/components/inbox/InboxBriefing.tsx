@@ -220,6 +220,9 @@ export function InboxBriefingView({ briefing }: { briefing: Briefing }) {
           <p className="text-xs leading-relaxed text-amber-100/90">
             AI analysis is unavailable, so nothing below has been classified by content.
             Delivery failures and the grouping still come straight from Gmail.
+            {briefing.ai_error?.message && (
+              <span className="mt-1 block text-amber-200/80">{briefing.ai_error.message}</span>
+            )}
           </p>
         </div>
       )}

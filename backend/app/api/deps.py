@@ -153,6 +153,6 @@ def current_user_id(authorization: str | None = Header(default=None)) -> str:
 
 
 #: Annotate a route parameter with this to receive the verified caller's id.
-#: `async def inbox_summary(user_id: CurrentUser)` replaces the old
-#: `async def inbox_summary(user_id: str)` that trusted the query string.
+#: `def inbox_summary(user_id: CurrentUser)` replaces the old
+#: `def inbox_summary(user_id: str)` that trusted the query string.
 CurrentUser = Annotated[str, Depends(current_user_id)]

@@ -105,7 +105,7 @@ def _top_senders(service, max_messages=50, top_n=5):
 
 
 @router.get("/overview")
-async def analytics_overview(user_id: CurrentUser):
+def analytics_overview(user_id: CurrentUser):
     service, _user_name, linked = _load_gmail(user_id)
     if not linked:
         return {"gmail_linked": False}

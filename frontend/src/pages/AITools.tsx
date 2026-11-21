@@ -19,7 +19,7 @@ interface Tool {
   accent: string;
 }
 
-/** LLM-backed tools: a prompt goes to Mistral and the answer streams back. */
+/** LLM-backed tools: a prompt goes to the configured AI provider and the answer streams back. */
 const CATEGORIES: { title: string; icon: ReactNode; tools: Tool[] }[] = [
   {
     title: "Write & Edit",

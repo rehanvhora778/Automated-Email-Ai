@@ -40,7 +40,7 @@ app.add_middleware(
 
 # --- ROUTERS REGISTER KARNA ---
 
-# 1. Chat (Mistral AI logic)
+# 1. Chat (LLM-drafted emails, via the provider chain in services/llm.py)
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 
 # 2. Actions (Gmail Login & Send logic)

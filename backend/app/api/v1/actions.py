@@ -22,15 +22,18 @@ stops, having linked nothing.
 """
 import datetime
 import os
+import re
 import base64
 import secrets
 import requests
+from email.utils import getaddresses
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser
+from app.api.v1.auth import gmail_scope_flags
 from app.db.supabase import supabase
 from app.services.gmail_service import (
     GMAIL_SCOPES,
@@ -147,6 +150,23 @@ def _normalise_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _invalid_recipients(to_email: str) -> list[str]:
+    """Recipients that are not plausible addresses, in the order given.
+
+    A mistyped recipient is the most common reason a send fails, and Gmail's
+    own answer arrived as a generic "could not complete that request". Catching
+    it here lets the user see which address to fix.
+    """
+    pairs = getaddresses([(to_email or "").replace(";", ",")])
+    addresses = [(name, addr) for name, addr in pairs if name or addr]
+    if not addresses:
+        return [to_email or ""]
+    return [(addr or name).strip() for name, addr in addresses if not _ADDRESS.match(addr or "")]
+
+
 def _clean_header(value: str) -> str:
     """A header value with line breaks stripped out.
 
@@ -169,7 +189,7 @@ def _back_to_app(status: str, reason: str = "", state: str = "") -> RedirectResp
 
 
 @router.get("/login-google")
-async def login_google(user_id: CurrentUser):
+def login_google(user_id: CurrentUser):
     """Start a Gmail link: mint a one-time state and hand back Google's URL."""
     if not client_config:
         raise HTTPException(status_code=500, detail="Google Credentials not configured")
@@ -228,7 +248,7 @@ async def login_google(user_id: CurrentUser):
 
 
 @router.get("/callback")
-async def callback(
+def callback(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
     error: str | None = Query(default=None),
@@ -325,7 +345,7 @@ async def callback(
 
 
 @router.post("/complete-link")
-async def complete_link(payload: CompleteLinkRequest, user_id: CurrentUser):
+def complete_link(payload: CompleteLinkRequest, user_id: CurrentUser):
     """Attach a parked Google token to the account that started the attempt.
 
     The two checks here are the whole point of the handshake: the state must be
@@ -396,15 +416,19 @@ async def complete_link(payload: CompleteLinkRequest, user_id: CurrentUser):
     except Exception as e:
         print(f"actions: could not clear consumed oauth state: {e}")
 
+    flags = gmail_scope_flags(token_data)
     return {
         "linked": bool(token_data.get("refresh_token")),
         "email": linked_email,
         "scope": token_data.get("scope", ""),
+        # Each Gmail permission is its own checkbox at Google, so a link can
+        # succeed without the right to send; the UI warns when that happened.
+        "can_send": flags["send"] or flags["modify"],
     }
 
 
 @router.post("/unlink-google")
-async def unlink_google(user_id: CurrentUser):
+def unlink_google(user_id: CurrentUser):
     """Disconnect the mailbox here and withdraw the grant at Google.
 
     Clearing the stored row alone left the grant live: the app kept appearing
@@ -449,7 +473,7 @@ async def unlink_google(user_id: CurrentUser):
 
 # --- DYNAMIC SIDEBAR HISTORY ENDPOINT ---
 @router.get("/history")
-async def get_history(user_id: CurrentUser):
+def get_history(user_id: CurrentUser):
     try:
         # User ki pichli 10 unique queries uthao
         res = supabase.from_("chat_messages") \
@@ -468,7 +492,7 @@ async def get_history(user_id: CurrentUser):
 
 
 @router.post("/send-email")
-async def send_email(
+def send_email(
     user_id: CurrentUser,
     to_email: str = Form(...),
     subject: str = Form(""),
@@ -480,7 +504,10 @@ async def send_email(
     if not to_email:
         raise HTTPException(status_code=400, detail="A recipient address is required")
 
-    # Read the optional uploaded file now (UploadFile read is async)
+    # Read the optional uploaded file now. This route is sync (it runs in a
+    # worker thread, so the Supabase and Gmail calls below cannot stall the
+    # event loop), which means the upload is read from its underlying file
+    # object rather than through the async UploadFile.read().
     extra_file_bytes = None
     extra_file_name = None
     extra_file_type = "application/octet-stream"
@@ -488,7 +515,7 @@ async def send_email(
         # Read with a ceiling rather than file.read(): an unbounded read would
         # pull however many megabytes the caller sent straight into the memory
         # of a container that has very little of it.
-        extra_file_bytes = await file.read(MAX_ATTACHMENT_BYTES + 1)
+        extra_file_bytes = file.file.read(MAX_ATTACHMENT_BYTES + 1)
         if len(extra_file_bytes) > MAX_ATTACHMENT_BYTES:
             raise HTTPException(
                 status_code=413,
@@ -497,12 +524,38 @@ async def send_email(
         extra_file_name = _clean_header(file.filename) or "attachment"
         extra_file_type = file.content_type or "application/octet-stream"
 
-    # 1. Get Token
-    res = supabase.from_("profiles").select("gmail_token").eq("id", user_id).execute()
+    invalid = _invalid_recipients(to_email)
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{invalid[0]}' is not a valid email address. Please check the recipient.",
+        )
+
+    # 1. Get Token. Inside a try: an unhandled exception here becomes a bare
+    # 500 without CORS headers, which the browser reports as a network failure.
+    try:
+        res = supabase.from_("profiles").select("gmail_token").eq("id", user_id).execute()
+    except Exception as e:
+        print(f"actions: profile lookup for send failed: {e}")
+        raise HTTPException(status_code=503, detail="Could not load your Gmail link right now. Please try again.")
     if not res.data or not res.data[0].get('gmail_token'):
         raise HTTPException(status_code=401, detail="Gmail not linked")
 
     token_data = res.data[0]['gmail_token']
+
+    # Google's consent screen gives each Gmail permission its own checkbox, so
+    # a mailbox can be linked without the right to send. Gmail would answer
+    # 403, which used to surface as "Gmail isn't linked any more" — say what is
+    # actually missing instead. messages.send accepts gmail.send or gmail.modify.
+    flags = gmail_scope_flags(token_data)
+    if not (flags["send"] or flags["modify"]):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Google did not give this app permission to send email. Re-link Gmail "
+                "and tick every permission box, including 'Send email on your behalf'."
+            ),
+        )
 
     def _save_refreshed(creds, previous=token_data):
         supabase.from_("profiles").update(

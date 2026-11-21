@@ -104,6 +104,18 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * The best sentence available for any failure: the server's `detail`, else
+ * the message of an Error this app threw itself, else the fallback. Axios's
+ * own wording ("Request failed with status code 503") is never shown.
+ */
+export function errorMessage(error: unknown, fallback: string): string {
+  const detail = apiErrorDetail(error);
+  if (detail) return detail;
+  if (axios.isAxiosError(error)) return fallback;
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/**
  * Message of a thrown Error, else the fallback. For the streaming paths, which
  * use `fetch` and fold the server's detail into the Error they throw, so there
  * is no axios envelope to read.
@@ -117,12 +129,27 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-/** Smart Reply — six reply styles from a pasted email. */
+/**
+ * Smart Reply — one draft per requested style from a pasted email.
+ *
+ * Styles that came back empty are dropped rather than rendered as blank cards
+ * with a confidence score and a working Send button; if nothing usable came
+ * back at all, that is an error, not a result.
+ */
 export async function generateReplies(
   payload: GenerateReplyPayload
 ): Promise<ReplyStyles> {
   const { data } = await apiClient.post("/api/v1/reply/generate", payload);
-  return data.replies as ReplyStyles;
+  const replies: ReplyStyles = {};
+  for (const [style, text] of Object.entries(data?.replies ?? {})) {
+    if (typeof text === "string" && text.trim()) {
+      replies[style as keyof ReplyStyles] = text;
+    }
+  }
+  if (!Object.keys(replies).length) {
+    throw new Error("The AI returned no reply drafts. Please try again.");
+  }
+  return replies;
 }
 
 /** AI Inbox Summary — reads recent Gmail and returns a structured briefing. */
@@ -230,6 +257,9 @@ export async function classifyHealth(): Promise<ClassifyHealthResponse | null> {
   }
 }
 
+/** Matches STREAM_ERROR_MARKER in backend/app/api/v1/tools.py. */
+const STREAM_ERROR_MARKER = "\n\n[stream error] ";
+
 /**
  * Run an AI writing tool, streaming the result. Calls `onChunk` with each text
  * delta as it arrives and resolves with the full text. Pass an AbortSignal to
@@ -297,6 +327,19 @@ export async function streamTool(
     full += tail;
     onChunk(tail);
   }
+
+  // A stream can only fail with an HTTP status before it starts. If the model
+  // broke off after text had gone out, the backend ends the body with this
+  // marker and a sentence; surface that as an error so the partial text is
+  // never offered for copying or sending as if it were a finished answer.
+  const cut = full.indexOf(STREAM_ERROR_MARKER);
+  if (cut !== -1) {
+    const reason = full.slice(cut + STREAM_ERROR_MARKER.length).trim();
+    throw new Error(reason || "The answer was cut off. Please try again.");
+  }
+  if (!full.trim()) {
+    throw new Error("The AI returned an empty response. Please try again.");
+  }
   return full;
 }
 
@@ -344,9 +387,9 @@ export async function beginGmailLink(): Promise<{ url: string; state: string }> 
  */
 export async function completeGmailLink(
   state: string
-): Promise<{ linked: boolean; email: string | null; scope: string; reason?: string }> {
+): Promise<{ linked: boolean; email: string | null; scope: string; can_send?: boolean; reason?: string }> {
   const { data } = await apiClient.post("/api/v1/actions/complete-link", { state });
-  return data as { linked: boolean; email: string | null; scope: string; reason?: string };
+  return data as { linked: boolean; email: string | null; scope: string; can_send?: boolean; reason?: string };
 }
 
 /**

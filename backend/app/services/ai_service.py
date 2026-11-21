@@ -1,14 +1,15 @@
-import os
 import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from mistralai import Mistral
-from dotenv import load_dotenv
-
+from app.services import llm
+from app.services.llm import LLMError
 from app.services.inbox_reader import relative_age
 
-load_dotenv()
+# Replies the old single-provider client stored in chat history as if they
+# were answers. They are skipped when history is replayed, so a conversation
+# that lived through the outage does not teach the model to apologise.
+LEGACY_ERROR_REPLIES = {"Mistral AI is busy. Try again."}
 
 def date_reference(client_date: str | None = None) -> str:
     """A table of the dates a draft might name, already worked out.
@@ -248,13 +249,77 @@ def _format_failure(f):
     ).replace("  ", " ")
 
 
-class SecretaryAI:
-    def __init__(self):
-        api_key = os.getenv("MISTRAL_API_KEY")
-        self.model = "mistral-medium-latest" 
-        self.client = Mistral(api_key=api_key)
+_BODY_KEYS = ("body", "text", "draft", "email", "content", "message")
+_SUBJECT_LINE = re.compile(r"^\s*subject\s*:\s*(.+?)\s*(?:\n+|$)", re.IGNORECASE)
 
-    def generate_response(self, user_input, profile_data, chat_history=[], client_date=None):
+
+def _unnest(value):
+    """(body, subject) from a draft some models wrap one level too deep.
+
+    {"subject": ..., "body": ...} must yield the body, not the JSON of the
+    whole object — that would be emailed verbatim with a working Send button.
+    """
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return value, ""
+    if not isinstance(value, dict):
+        return value, ""
+    subject = value.get("subject") if isinstance(value.get("subject"), str) else ""
+    for key in _BODY_KEYS:
+        if isinstance(value.get(key), str) and value[key].strip():
+            return value[key], subject
+    strings = [v for k, v in value.items() if k != "subject" and isinstance(v, str) and v.strip()]
+    return (strings[0] if len(strings) == 1 else ""), subject
+
+
+def _normalise_draft(data):
+    """Coerce the drafting model's JSON into the shape the chat UI relies on.
+
+    The UI shows a Send button only for status "ready" and reads the subject
+    from metadata, so both have to be well-formed whatever the model returned.
+    Raises LLMError when there is no usable text at all.
+    """
+    status = data.get("status")
+    if status not in ("ready", "missing_info"):
+        status = "ready"
+
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    subject = metadata.get("subject") if isinstance(metadata.get("subject"), str) else ""
+
+    content, nested_subject = _unnest(data.get("content"))
+    if not isinstance(content, str):
+        content = "" if content is None else str(content)
+    subject = subject.strip() or (nested_subject or "").strip()
+
+    # A "Subject:" line belongs in the subject field, not inside the body
+    # where it would be sent as the email's first line.
+    if status == "ready":
+        line = _SUBJECT_LINE.match(content)
+        if line:
+            subject = subject or line.group(1).strip()
+            content = content[line.end():]
+
+    content = unwrap_hard_breaks(content.strip())
+    if not content:
+        raise LLMError(LLMError.UNAVAILABLE, "the model returned an empty draft")
+
+    metadata["subject"] = subject
+    return {"status": status, "content": content, "metadata": metadata}
+
+
+class SecretaryAI:
+    """Every AI capability of the app. Which model answers is `llm`'s business.
+
+    Methods raise `LLMError` when no configured provider could answer, so each
+    route can say so with a real status code instead of passing an apology off
+    as content.
+    """
+
+    def generate_response(self, user_input, profile_data, chat_history=None, client_date=None):
         # User details setup
         user_name = profile_data.get('full_name', 'User')
         signature = profile_data.get('signature') or f"Best regards,\n{user_name}"
@@ -298,87 +363,50 @@ class SecretaryAI:
         RESPONSE FORMAT (Strict JSON):
         {{
             "status": "ready" | "missing_info",
-            "content": "Final draft OR a polite request for missing details",
-            "metadata": {{ "subject": "...", "type": "..." }}
+            "content": "ready: ONLY the email body, starting with the greeting, with no Subject: or To: line. missing_info: a polite request for the missing details.",
+            "metadata": {{ "subject": "the email's subject line", "type": "..." }}
         }}
         """
-        # ... baaki code same ...
-        # ... baaki messages aur client.chat.complete wala code same rahega ...
 
-        # --- MEMORY LOGIC START ---
-        # 1. Sabse pehle System Instructions daalo
+        # Memory: the system rules first, then this conversation's earlier
+        # turns so follow-ups ("make it shorter") have something to refer to,
+        # then the new request last.
         messages = [{"role": "system", "content": system_instructions}]
-
-        # 2. Phir purani chat history add karo (taaki AI ko pichli baatein yaad rahein)
-        for msg in chat_history:
-            messages.append({
-                "role": msg["role"], 
-                "content": msg["content"]
-            })
-
-        # 3. Sabse aakhiri mein user ka naya sawal daalo
+        for msg in chat_history or []:
+            role, content = msg.get("role"), msg.get("content")
+            if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+                continue
+            if role == "assistant" and content.strip() in LEGACY_ERROR_REPLIES:
+                continue
+            messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": user_input})
-        # --- MEMORY LOGIC END ---
 
-        try:
-            # Mistral API call
-            response = self.client.chat.complete(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
-            
-            raw_content = response.choices[0].message.content
-            data = json.loads(raw_content)
-            # The rules above cut this down but do not eliminate it; models still
-            # wrap prose written inside a JSON string. Repair it here, where both
-            # the chat view and the send path read from.
-            if isinstance(data.get("content"), str):
-                data["content"] = unwrap_hard_breaks(data["content"])
-            return data
-
-        except json.JSONDecodeError:
-            print("AI ne JSON format nahi diya.")
-            return {
-                "status": "ready",
-                "content": unwrap_hard_breaks(response.choices[0].message.content),
-                "metadata": {}
-            }
-            
-        except Exception as e:
-            print(f"MISTRAL API ERROR: {e}")
-            return {
-                "status": "error",
-                "content": "Mistral AI is busy. Try again.",
-                "metadata": {}
-            }
+        result = llm.complete(messages, json_mode=True, max_tokens=1600, temperature=0.4)
+        # The rules above cut down hard-wrapped prose inside the JSON string
+        # but do not eliminate it; _normalise_draft repairs it here, where both
+        # the chat view and the send path read from.
+        return _normalise_draft(result.data)
 
     # =====================================================================
     # Copilot capabilities (Smart Reply, Inbox Summary, Writing Tools)
     # =====================================================================
 
-    def _chat_json(self, system_prompt, user_prompt):
-        """Call Mistral expecting a strict JSON object; returns a parsed dict."""
-        response = self.client.chat.complete(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-        return json.loads(response.choices[0].message.content)
+    @staticmethod
+    def _messages(system_prompt, user_prompt):
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
-    def _chat_text(self, system_prompt, user_prompt):
-        """Call Mistral for a plain-text completion."""
-        response = self.client.chat.complete(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return response.choices[0].message.content
+    def _chat_json(self, system_prompt, user_prompt, max_tokens=2048, temperature=0.3):
+        """A strict JSON object from the configured LLM chain; raises LLMError."""
+        return llm.complete(self._messages(system_prompt, user_prompt), json_mode=True,
+                            max_tokens=max_tokens, temperature=temperature).data
+
+    def _chat_text(self, system_prompt, user_prompt, max_tokens=2048, temperature=0.4):
+        """A plain-text completion from the configured LLM chain; raises LLMError."""
+        return llm.complete(self._messages(system_prompt, user_prompt),
+                            max_tokens=max_tokens, temperature=temperature).text
 
     def generate_replies(self, original_email, tone="", context="", user_name="User", signature="", styles=None):
         """Produce distinct reply drafts (one per requested style) for a pasted email.
@@ -418,12 +446,19 @@ Rules:
             f"TONE PREFERENCE: {tone or 'balanced/default'}\n"
             f"EXTRA CONTEXT: {context or 'none'}"
         )
-        try:
-            data = self._chat_json(system_prompt, user_prompt)
-            return {k: unwrap_hard_breaks((data.get(k) or "").strip()) for k in keys}
-        except Exception as e:
-            print(f"generate_replies error: {e}")
-            return {k: "" for k in keys}
+        # Every style is written in one call, so the output budget scales with
+        # how many were asked for (roughly 120 words each, plus JSON overhead).
+        data = self._chat_json(system_prompt, user_prompt,
+                               max_tokens=300 * len(keys) + 700, temperature=0.7)
+        replies = {}
+        for k in keys:
+            value = data.get(k)
+            replies[k] = unwrap_hard_breaks(value.strip()) if isinstance(value, str) else ""
+        if not any(replies.values()):
+            # Blank cards with no explanation were what users saw before; an
+            # answer with nothing in it is a failure and is reported as one.
+            raise LLMError(LLMError.UNAVAILABLE, "the model returned no reply drafts")
+        return replies
 
     def analyze_inbox(self, records, failures=None, user_name="there", now=None):
         """Reason over prepared inbox evidence and return the model's judgements.
@@ -450,7 +485,7 @@ Rules:
             f"but do give each one a recommended action):\n{failures_block}\n\n"
             f"EMAILS (newest first):\n{emails_block}"
         )
-        return self._chat_json(system_prompt, user_prompt)
+        return self._chat_json(system_prompt, user_prompt, max_tokens=3500, temperature=0.2)
 
     def _build_tool_prompts(self, action, input_text, context=""):
         """Shared prompt construction for the writing tools (used by run_tool + stream_tool).
@@ -474,26 +509,31 @@ Rules:
         user_prompt = f"CONTEXT: {context or 'none'}\n\nINPUT:\n{input_text}"
         return system_prompt, user_prompt
 
+    # Tools that must reproduce the input faithfully run cooler than the ones
+    # asked to rephrase it.
+    _CREATIVE_TOOLS = {"rewrite", "custom"}
+
+    def _tool_temperature(self, action):
+        return 0.7 if action in self._CREATIVE_TOOLS else 0.3
+
     def run_tool(self, action, input_text, context=""):
-        """Generic single-output writing tool (translate, improve, rewrite, summarize, ...)."""
+        """Generic single-output writing tool (translate, improve, rewrite, summarize, ...).
+
+        Raises LLMError when no provider could answer.
+        """
         system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context)
-        try:
-            return {"content": (self._chat_text(system_prompt, user_prompt) or "").strip()}
-        except Exception as e:
-            print(f"run_tool error: {e}")
-            return {"content": "", "error": str(e)}
+        text = self._chat_text(system_prompt, user_prompt, max_tokens=2048,
+                               temperature=self._tool_temperature(action))
+        return {"content": (text or "").strip()}
 
     def stream_tool(self, action, input_text, context=""):
-        """Same as run_tool, but yields text deltas as they arrive from Mistral."""
+        """Same as run_tool, but returns an iterator of text deltas.
+
+        The stream is opened eagerly — every fallback happens before this
+        returns — so a caller can still answer with an error status. Raises
+        LLMError if nothing could start; iterating can raise LLMError if a
+        provider breaks off mid-answer.
+        """
         system_prompt, user_prompt = self._build_tool_prompts(action, input_text, context)
-        stream = self.client.chat.stream(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        for event in stream:
-            delta = event.data.choices[0].delta.content
-            if delta:
-                yield delta
+        return llm.open_stream(self._messages(system_prompt, user_prompt), max_tokens=2048,
+                               temperature=self._tool_temperature(action))

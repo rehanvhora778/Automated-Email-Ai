@@ -28,7 +28,7 @@ You need:
 |---|---|
 | `SUPABASE_URL` | `backend/.env` |
 | `SUPABASE_KEY` (service_role) | `backend/.env` |
-| `MISTRAL_API_KEY` | `backend/.env` |
+| `GROQ_API_KEY` (free at [console.groq.com/keys](https://console.groq.com/keys)) | `backend/.env` |
 | Google OAuth client JSON | `backend/credentials.json` |
 
 > **The service-role key bypasses row-level security.** It belongs only in Render's
@@ -75,7 +75,7 @@ Scroll to **Environment Variables** and add:
 | `PYTHON_VERSION` | `3.11.9` |
 | `SUPABASE_URL` | your project URL |
 | `SUPABASE_KEY` | your **service_role** key |
-| `MISTRAL_API_KEY` | your Mistral key |
+| `GROQ_API_KEY` | your Groq key (`gsk_…`) — every AI feature runs on it |
 | `GOOGLE_CREDENTIALS_JSON` | the **entire contents** of `backend/credentials.json`, as one line |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` for now — fixed in step 6 |
 | `BREVO_API_KEY` | your `xkeysib-…` key — this is what mails the signup and reset codes |
@@ -90,6 +90,17 @@ issued and sent by this backend rather than by Supabase. Without them the signup
 asks for a code that never arrives. `MAIL_FROM_NAME`, `RESEND_API_KEY` and the `SMTP_*`
 alternatives are described in `backend/.env.example` and in the README's step 5; Render
 blocks outbound SMTP, so an HTTP provider is the only one that works here.
+
+The AI features run through a provider chain (`backend/app/services/llm.py`), tried in
+order until one answers. With only `GROQ_API_KEY` set it uses Groq's free
+`openai/gpt-oss-120b`, falling back to `openai/gpt-oss-20b` when that model is busy.
+`OPENAI_API_KEY` joins the chain automatically if present. Gemini and Mistral are opt-in,
+because their free tiers may use what they receive to train models, and this app sends
+them Gmail content: set `GEMINI_API_KEY` / `MISTRAL_API_KEY` **and** list them in
+`AI_PROVIDERS` (e.g. `groq,mistral`), ideally after turning training off in that
+provider's console. To check what the live backend sees, open
+`https://<your-service>.onrender.com/api/v1/ai/status`; it lists each provider, whether
+it has a key and is enabled, and how its last call went, and never shows a key.
 
 For `GOOGLE_CREDENTIALS_JSON`, open `backend/credentials.json`, copy everything including
 the outer braces, and paste it as the value. It must stay valid JSON on a single line:

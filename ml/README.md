@@ -146,9 +146,11 @@ set completely.
 Scoring a 10,000-email mailbox: **3.1 seconds and $0.00** locally, versus roughly
 **2.2 hours and $4.00** through the API. That is a ~2,600× speedup.
 
-**They are not competitors.** The shipped design runs the classifier on every email and
-spends an LLM call only when the model is genuinely uncertain, or when the user wants an
-explanation. Fast free verdict from the model; human-readable reasoning from Mistral.
+**They are not competitors.** The shipped design runs the classifier first, so its verdict
+is on screen almost instantly, and streams an LLM explanation alongside it. Fast free
+verdict from the model; human-readable reasoning from the LLM. (The comparison above was
+measured against Mistral, which the app used at the time; it now calls Groq by default,
+whose latency and cost differ.)
 
 ---
 

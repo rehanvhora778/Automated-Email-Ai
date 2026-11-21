@@ -1,7 +1,7 @@
 """Local spam and phishing classifiers — trained scikit-learn models, no API call.
 
 Loads the pipelines produced by `ml/train.py` and `ml/train_phishing.py` and
-scores an email in about a millisecond. This exists alongside the Mistral-powered
+scores an email in about a millisecond. This exists alongside the LLM-powered
 `spam_detection` tool rather than replacing it: the classifier is fast, free
 and deterministic, while the LLM explains its reasoning in prose. The API
 returns both so the UI can show a verdict instantly and the narrative after.

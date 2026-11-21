@@ -40,7 +40,7 @@ def _header(msg, name):
 
 
 @router.get("/list")
-async def contacts_list(
+def contacts_list(
     user_id: CurrentUser,
     # Every id listed here becomes a metadata fetch in the batch below, so the
     # ceiling keeps one request from turning into a thousand calls to Gmail.

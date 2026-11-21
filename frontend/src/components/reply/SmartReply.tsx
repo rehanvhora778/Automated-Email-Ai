@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Sparkles, Wand2, Reply as ReplyIcon, LayoutGrid, Columns } from "lucide-react";
 import { toast } from "sonner";
-import { apiErrorDetail, apiErrorMessage, generateReplies } from "../../lib/api";
+import { errorMessage, generateReplies } from "../../lib/api";
 import type { ReplyStyle, ReplyStyles } from "../../lib/types";
 import { REPLY_STYLES, DEFAULT_SELECTED_STYLES } from "../../lib/replyStyles";
 import { GlassCard } from "../ui/GlassCard";
@@ -46,7 +46,7 @@ export function SmartReply({
       setReplies(data);
       toast.success(`${Object.keys(data).length} replies generated`);
     },
-    onError: (e) => toast.error(apiErrorMessage(e, "Generation failed")),
+    onError: (e) => toast.error(errorMessage(e, "Generation failed")),
   });
 
   const onSubmit = (vals: FormValues) => {
@@ -63,10 +63,17 @@ export function SmartReply({
     setRegenerating((r) => ({ ...r, [style]: true }));
     try {
       const data = await generateReplies({ ...lastInput, styles: [style] });
-      setReplies((prev) => ({ ...(prev ?? {}), [style]: data[style] ?? "" }));
+      const next = data[style];
+      if (!next) {
+        // generateReplies only returns non-empty drafts, so a missing style
+        // means the model skipped it. Keep the draft already on screen.
+        toast.error("Couldn't regenerate that reply. Your previous draft was kept.");
+        return;
+      }
+      setReplies((prev) => ({ ...(prev ?? {}), [style]: next }));
       toast.success(`Regenerated ${style} reply`);
-    } catch {
-      toast.error("Regenerate failed");
+    } catch (e) {
+      toast.error(errorMessage(e, "Regenerate failed. Your previous draft was kept."));
     } finally {
       setRegenerating((r) => ({ ...r, [style]: false }));
     }
@@ -219,7 +226,7 @@ export function SmartReply({
         <GlassCard className="p-6">
           <ErrorState
             title="Couldn't generate replies"
-            message={apiErrorDetail(genMut.error)}
+            message={errorMessage(genMut.error, "The AI could not write replies right now. Please try again.")}
             onRetry={() => lastInput && genMut.mutate(lastInput)}
           />
         </GlassCard>

@@ -23,6 +23,7 @@ import {
   apiErrorStatus,
   beginGmailLink,
   completeGmailLink,
+  errorMessage,
   getAccountStatus,
   sendGmailMessage,
 } from './lib/api';
@@ -375,7 +376,15 @@ useEffect(() => {
         // and the inbox reflect the mailbox that now exists.
         queryClient.invalidateQueries();
         const who = res.email ? ` (${res.email})` : '';
-        if (res.linked) {
+        if (res.linked && res.can_send === false) {
+          // Google gives each Gmail permission its own checkbox, so the link
+          // can succeed without the right to send. Say so now, rather than
+          // letting the first send fail with no obvious cause.
+          toast.warning(
+            `Gmail linked${who}, but Google did not grant permission to send email. ` +
+              "Re-link from Settings and tick every box, including 'Send email on your behalf'."
+          );
+        } else if (res.linked) {
           toast.success(`Gmail linked successfully${who}.`);
         } else {
           // No refresh token means access dies with the current hour and
@@ -402,6 +411,9 @@ useEffect(() => {
   // Actually send the email (supports an optional user-picked file attachment)
   const submitEmail = async () => {
     if (!composeTo.trim()) { toast.error("Please enter a recipient email."); return; }
+    // The last stop before Gmail: an AI path that came back empty must not
+    // turn into a blank email in someone's inbox. A file on its own is fine.
+    if (!composeBody.trim() && !composeFile) { toast.error("The email body is empty."); return; }
     setSending(true);
     try {
       await sendGmailMessage({
@@ -426,11 +438,12 @@ useEffect(() => {
   };
 
   const handleSendMessage = async () => {
-    if (!message) return;
+    if (!message.trim() || loading) return;
     setLoading(true);
     const currentMessage = message;
+    const sent: ChatMessage = { role: 'user', text: currentMessage };
     setMessage('');
-    setChat(prev => [...prev, { role: 'user', text: currentMessage }]);
+    setChat(prev => [...prev, sent]);
     try {
       const response = await apiClient.post('/api/v1/chat/', {
         message: currentMessage,
@@ -439,18 +452,27 @@ useEffect(() => {
         // against their day rather than the server's UTC one.
         client_date: new Date().toLocaleDateString('en-CA'),
       });
+      const data = response.data ?? {};
+      // Only a real draft becomes a bubble. An empty or non-string answer
+      // used to be shown as "Executed." with a working Send button, and an
+      // object here would have crashed the whole page as a React child.
+      const text = typeof data.content === 'string' ? data.content.trim() : '';
+      if (!text) throw new Error('The assistant returned an empty reply. Please try again.');
+      const subject = typeof data.metadata?.subject === 'string' ? data.metadata.subject : '';
       setChat(prev => [...prev, {
-        role: 'assistant', text: response.data?.content || "Executed.",
-        status: response.data?.status, metadata: response.data?.metadata
+        role: 'assistant', text, status: data.status, metadata: { ...data.metadata, subject },
       }]);
       // Keep the thread active (a new conversation returns its fresh id)
-      if (response.data?.conversation_id) setActiveConversationId(response.data.conversation_id);
+      if (data.conversation_id) setActiveConversationId(data.conversation_id);
       fetchConversations(user!.id);
     } catch (e) {
       console.error(e);
-      // The bubble the user just sent stays on screen either way, so without
-      // this the assistant simply never answers and nothing says why.
-      toast.error(apiErrorMessage(e, 'The assistant could not answer. Please try again.'));
+      // The server saved nothing for a failed turn, so take the unanswered
+      // bubble back and return the text to the input: retrying is then one
+      // key press instead of retyping the request. The toast says why.
+      setChat(prev => prev.filter(m => m !== sent));
+      setMessage(prev => prev || currentMessage);
+      toast.error(errorMessage(e, 'The assistant could not answer. Please try again.'));
     }
     setLoading(false);
   };
@@ -645,7 +667,7 @@ useEffect(() => {
                 <Send size={20} />
               </button>
             </div>
-            <p className="text-[10px] text-center text-neutral-700 mt-4 font-medium uppercase tracking-widest">Powered by Mistral AI v1.5</p>
+            <p className="text-[10px] text-center text-neutral-700 mt-4 font-medium uppercase tracking-widest">AI drafts can contain mistakes. Review before sending.</p>
           </div>
         </div>
         </>

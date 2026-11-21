@@ -180,7 +180,7 @@ class OtpRequest(BaseModel):
 
 
 @router.post("/request")
-async def request_code(payload: OtpRequest, request: Request):
+def request_code(payload: OtpRequest, request: Request):
     email = (payload.email or "").strip().lower()
     if not mailer.looks_like_email(email):
         raise HTTPException(status_code=400, detail="That does not look like an email address.")
@@ -331,7 +331,7 @@ class VerifySignup(BaseModel):
 
 
 @router.post("/verify-signup")
-async def verify_signup(payload: VerifySignup):
+def verify_signup(payload: VerifySignup):
     """Confirm the code, then create the account through Supabase.
 
     The password arrives with this call rather than being held from the earlier
@@ -388,7 +388,7 @@ class VerifyRecovery(BaseModel):
 
 
 @router.post("/verify-recovery")
-async def verify_recovery(payload: VerifyRecovery):
+def verify_recovery(payload: VerifyRecovery):
     """Confirm the code, then set the new password."""
     email = (payload.email or "").strip().lower()
 
@@ -439,7 +439,7 @@ async def verify_recovery(payload: VerifyRecovery):
 
 
 @router.get("/health")
-async def health(check: bool = False):
+def health(check: bool = False):
     """Whether this deployment can send mail, without revealing config.
 
     `?check=true` also opens a real connection and authenticates, reporting what

@@ -3,7 +3,7 @@ from typing import Optional
 
 # Ye sirf validation ke liye hai
 class ChatRequest(BaseModel):
-    # The message is forwarded to Mistral, so it is bounded here: an oversized
+    # The message is forwarded to the LLM, so it is bounded here: an oversized
     # body is rejected by validation rather than spending the shared quota.
     message: str = Field(..., max_length=20000)
     conversation_id: Optional[str] = None

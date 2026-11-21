@@ -137,7 +137,7 @@ def gmail_scope_flags(token: dict | None) -> dict:
 
 
 @router.post("/google/link")
-async def link_google_tokens(
+def link_google_tokens(
     payload: GoogleTokenPayload,
     authorization: str | None = Header(default=None),
 ):
@@ -197,7 +197,7 @@ async def link_google_tokens(
 
 
 @router.get("/me")
-async def me(user_id: CurrentUser):
+def me(user_id: CurrentUser):
     """The signed-in user's profile, including whether Gmail is linked."""
 
     def _select(columns: str):

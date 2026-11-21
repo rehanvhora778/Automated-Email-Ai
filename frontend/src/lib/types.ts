@@ -142,6 +142,8 @@ export interface InboxBriefing {
   scope: BriefingScope;
   /** True when the AI pass failed and only Gmail's own signals were used. */
   degraded: boolean;
+  /** Why the AI pass failed, when it did (e.g. the free quota is used up). */
+  ai_error?: { kind: string; message: string } | null;
 }
 
 export interface InboxStats {

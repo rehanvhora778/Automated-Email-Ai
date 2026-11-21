@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser
 from app.services.ai_service import SecretaryAI
+from app.services.llm import LLMError
 from app.db.supabase import get_user_profile
 
 router = APIRouter()
@@ -12,7 +13,7 @@ ai = SecretaryAI()
 
 
 class ReplyRequest(BaseModel):
-    # Everything below is forwarded to Mistral, so each free-text field is
+    # Everything below is forwarded to the LLM, so each free-text field is
     # bounded: an oversized paste is rejected by validation rather than being
     # charged against the quota that chat and the inbox briefing share.
     original_email: str = Field(..., min_length=1, max_length=20000)
@@ -22,8 +23,10 @@ class ReplyRequest(BaseModel):
     styles: Optional[List[str]] = None
 
 
+# `def`, not `async def`: the profile read and the LLM call both block, and a
+# sync route runs in a worker thread instead of stalling the whole server.
 @router.post("/generate")
-async def generate_reply(req: ReplyRequest, user_id: CurrentUser):
+def generate_reply(req: ReplyRequest, user_id: CurrentUser):
     if not req.original_email.strip():
         raise HTTPException(status_code=400, detail="original_email is required")
 
@@ -36,12 +39,16 @@ async def generate_reply(req: ReplyRequest, user_id: CurrentUser):
     except Exception as e:
         print(f"reply: profile fetch warning: {e}")
 
-    replies = ai.generate_replies(
-        original_email=req.original_email,
-        tone=req.tone or "",
-        context=req.context or "",
-        user_name=user_name,
-        signature=signature,
-        styles=req.styles,
-    )
+    try:
+        replies = ai.generate_replies(
+            original_email=req.original_email,
+            tone=req.tone or "",
+            context=req.context or "",
+            user_name=user_name,
+            signature=signature,
+            styles=req.styles,
+        )
+    except LLMError as e:
+        print(f"reply: AI unavailable ({e.kind}): {e.detail}")
+        raise HTTPException(status_code=503, detail=e.user_message)
     return {"replies": replies}

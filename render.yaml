@@ -19,7 +19,9 @@ services:
         sync: false
       - key: SUPABASE_KEY          # service_role key
         sync: false
-      - key: MISTRAL_API_KEY
+      # AI provider chain (app/services/llm.py). GROQ_API_KEY alone is enough;
+      # see backend/.env.example for the optional providers and AI_PROVIDERS.
+      - key: GROQ_API_KEY            # https://console.groq.com/keys
         sync: false
       - key: GOOGLE_CREDENTIALS_JSON   # contents of backend/credentials.json, one line
         sync: false
